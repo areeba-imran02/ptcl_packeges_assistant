@@ -3,6 +3,7 @@ import json
 import pickle
 import hashlib
 import re
+import tempfile
 from pathlib import Path
 
 import faiss
@@ -39,104 +40,232 @@ EMBEDDING_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
 st.set_page_config(
     page_title="PTCL Assistant",
     page_icon="📡",
-    layout="wide",
+    layout="centered",
     initial_sidebar_state="expanded",
 )
 
 
 # =========================================================
-# PROFESSIONAL UI STYLING & COLOR PALETTE
+# UI STYLING
+# Palette (ocean blue + signal teal + soft foam text):
+#   --abyss   #04101F   page background
+#   --deep    #0A2140   panels / sidebar
+#   --tide    #123763   raised surfaces
+#   --signal  #2DD4BF   primary accent (teal)
+#   --azure   #3B82F6   secondary accent (blue)
+#   --foam    #EAF4FF   main text
+#   --mist    #93A9C7   muted text
 # =========================================================
 
 st.markdown(
     """
     <style>
-        /* Color Palette variables & Global app styles */
+        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Noto+Naskh+Arabic:wght@400;600&display=swap');
+
+        :root {
+            --abyss: #04101F;
+            --deep: #0A2140;
+            --tide: #123763;
+            --signal: #2DD4BF;
+            --azure: #3B82F6;
+            --foam: #EAF4FF;
+            --mist: #93A9C7;
+            --line: rgba(147, 169, 199, 0.18);
+        }
+
+        /* ---------- Base ---------- */
         .stApp {
-            background-color: #07152F;
-            color: #F8FAFF;
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background:
+                radial-gradient(900px 500px at 85% -10%, rgba(45, 212, 191, 0.14), transparent 60%),
+                radial-gradient(900px 600px at -10% 10%, rgba(59, 130, 246, 0.16), transparent 60%),
+                linear-gradient(180deg, #04101F 0%, #071A33 100%);
+            color: var(--foam);
+            font-family: 'Outfit', 'Noto Naskh Arabic', -apple-system, BlinkMacSystemFont, sans-serif;
         }
 
-        [data-testid="stSidebar"] {
-            background-color: #102A56;
-            border-right: 1px solid rgba(167, 139, 250, 0.15);
+        header[data-testid="stHeader"] { background: transparent; }
+        #MainMenu, footer { visibility: hidden; }
+
+        .block-container {
+            max-width: 900px;
+            padding-top: 1.2rem;
+            padding-bottom: 8rem;
         }
 
-        [data-testid="stSidebar"] * {
-            color: #F8FAFF !important;
+        [data-testid="stMarkdownContainer"],
+        [data-testid="stMarkdownContainer"] p,
+        [data-testid="stMarkdownContainer"] li {
+            color: var(--foam);
+            font-family: 'Outfit', 'Noto Naskh Arabic', sans-serif;
+            line-height: 1.65;
         }
 
-        .main-header {
-            padding: 1.5rem 0 0.5rem 0;
-            border-bottom: 1px solid rgba(167, 139, 250, 0.15);
-            margin-bottom: 1.5rem;
-        }
-
-        .main-title {
-            font-size: 2.2rem;
-            font-weight: 700;
-            color: #F8FAFF;
-            letter-spacing: -0.5px;
-            margin-bottom: 0.3rem;
-        }
-
-        .main-subtitle {
+        .rtl-block {
+            direction: rtl;
+            text-align: right;
+            font-family: 'Noto Naskh Arabic', 'Outfit', sans-serif;
             font-size: 1.05rem;
-            color: #A78BFA;
-            margin-bottom: 0.6rem;
+            line-height: 2;
         }
 
-        .developer-text {
-            font-size: 0.8rem;
-            color: #8EF0B0;
-            font-weight: 500;
+        /* ---------- Sidebar ---------- */
+        [data-testid="stSidebar"] {
+            background: linear-gradient(180deg, #0A2140 0%, #061428 100%);
+            border-right: 1px solid var(--line);
+        }
+        [data-testid="stSidebar"] p,
+        [data-testid="stSidebar"] label,
+        [data-testid="stSidebar"] span,
+        [data-testid="stSidebar"] .stMarkdown { color: var(--foam); }
+
+        .brand {
+            display: flex; align-items: center; gap: 0.75rem;
+            padding: 0.4rem 0 1rem 0;
+        }
+        .brand-logo {
+            width: 46px; height: 46px; border-radius: 14px;
+            display: grid; place-items: center; font-size: 1.5rem;
+            background: linear-gradient(135deg, var(--signal), var(--azure));
+            box-shadow: 0 6px 20px rgba(45, 212, 191, 0.3);
+        }
+        .brand-name { font-weight: 700; font-size: 1.15rem; color: var(--foam); line-height: 1.1; }
+        .brand-tag { font-size: 0.78rem; color: var(--mist); }
+
+        .side-title {
+            font-weight: 600; font-size: 0.95rem; color: var(--foam);
+            margin: 0.9rem 0 0.5rem 0;
         }
 
-        .welcome-card {
-            background: linear-gradient(135deg, #102A56 0%, #07152F 100%);
-            border: 1px solid rgba(107, 77, 255, 0.3);
-            border-radius: 16px;
-            padding: 2rem;
-            margin-bottom: 1.5rem;
-            box-shadow: 0 8px 32px rgba(7, 21, 47, 0.4);
+        .pill-wrap { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+        .pill {
+            font-size: 0.78rem; padding: 0.28rem 0.7rem; border-radius: 999px;
+            background: rgba(59, 130, 246, 0.14);
+            border: 1px solid rgba(59, 130, 246, 0.35);
+            color: #CFE2FF;
         }
 
+        .status-chip {
+            display: inline-flex; align-items: center; gap: 0.5rem;
+            padding: 0.4rem 0.8rem; border-radius: 10px; font-size: 0.85rem;
+            border: 1px solid var(--line);
+        }
+        .status-ok   { background: rgba(45, 212, 191, 0.12); color: #7FF0DF; border-color: rgba(45, 212, 191, 0.4); }
+        .status-warn { background: rgba(251, 191, 36, 0.12); color: #FCD980; border-color: rgba(251, 191, 36, 0.4); }
+        .status-bad  { background: rgba(248, 113, 113, 0.12); color: #FCA5A5; border-color: rgba(248, 113, 113, 0.4); }
+        .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+
+        .dev-credit { font-size: 0.78rem; color: var(--mist); line-height: 1.5; }
+
+        /* ---------- Hero ---------- */
+        .hero {
+            position: relative; overflow: hidden;
+            border-radius: 22px; padding: 1.9rem 2rem 1.7rem 2rem; margin-bottom: 1.3rem;
+            background: linear-gradient(120deg, #0B2A52 0%, #0A2140 55%, #0B3B4A 100%);
+            border: 1px solid var(--line);
+        }
+        .hero::after {
+            content: ""; position: absolute; right: -90px; top: -90px;
+            width: 340px; height: 340px; border-radius: 50%;
+            background: repeating-radial-gradient(circle at center,
+                rgba(45, 212, 191, 0.0) 0, rgba(45, 212, 191, 0.0) 22px,
+                rgba(45, 212, 191, 0.22) 23px, rgba(45, 212, 191, 0.0) 25px);
+            pointer-events: none;
+        }
+        .hero-title {
+            font-size: 2.3rem; font-weight: 700; letter-spacing: -0.02em; line-height: 1.1;
+            color: var(--foam); margin: 0 0 0.5rem 0;
+        }
+        .hero-sub { font-size: 1.02rem; color: #B9CCE6; max-width: 560px; margin: 0 0 1rem 0; }
+        .hero-badges { display: flex; flex-wrap: wrap; gap: 0.5rem; position: relative; z-index: 1; }
+        .badge {
+            font-size: 0.8rem; padding: 0.3rem 0.75rem; border-radius: 999px;
+            background: rgba(4, 16, 31, 0.55); border: 1px solid var(--line); color: #CFE2FF;
+        }
+
+        /* ---------- Welcome ---------- */
+        .welcome {
+            border-radius: 18px; padding: 1.3rem 1.5rem; margin-bottom: 1rem;
+            background: rgba(18, 55, 99, 0.35);
+            border: 1px solid var(--line);
+        }
+        .welcome-greet { font-size: 1.25rem; font-weight: 600; margin-bottom: 0.3rem; }
+        .welcome-text { color: #B9CCE6; font-size: 0.98rem; }
+
+        /* ---------- Chat ---------- */
         div[data-testid="stChatMessage"] {
+            border-radius: 18px;
+            padding: 1rem 1.2rem;
+            margin-bottom: 0.9rem;
+            border: 1px solid var(--line);
+            background: rgba(10, 33, 64, 0.65);
+        }
+        div[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"]),
+        div[data-testid="stChatMessage"]:has([data-testid="chatAvatarIcon-user"]) {
+            background: linear-gradient(135deg, rgba(59, 130, 246, 0.30), rgba(18, 55, 99, 0.60));
+            border-color: rgba(59, 130, 246, 0.45);
+        }
+        div[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarAssistant"]),
+        div[data-testid="stChatMessage"]:has([data-testid="chatAvatarIcon-assistant"]) {
+            border-left: 4px solid var(--signal);
+        }
+
+        /* ---------- Buttons ---------- */
+        .stButton > button, div[data-testid="stButton"] > button {
             border-radius: 12px;
-            padding: 1rem;
-            margin-bottom: 0.8rem;
-            border: 1px solid rgba(167, 139, 250, 0.1);
+            font-weight: 500;
+            font-family: 'Outfit', 'Noto Naskh Arabic', sans-serif;
+            background: rgba(18, 55, 99, 0.55);
+            color: var(--foam);
+            border: 1px solid rgba(59, 130, 246, 0.35);
+            padding: 0.55rem 0.9rem;
+            transition: border-color 0.15s ease, background 0.15s ease;
         }
-
-        div[data-testid="stChatMessage"][data-testid*="user"] {
-            background-color: #102A56;
+        .stButton > button:hover, div[data-testid="stButton"] > button:hover {
+            background: rgba(45, 212, 191, 0.14);
+            border-color: var(--signal);
+            color: #FFFFFF;
         }
+        .stButton > button:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
 
-        div[data-testid="stChatMessage"][data-testid*="assistant"] {
-            background-color: rgba(16, 42, 86, 0.6);
-            border-left: 4px solid #6C4DFF;
+        /* ---------- Chat input ---------- */
+        [data-testid="stBottom"], [data-testid="stBottom"] > div {
+            background: transparent !important;
         }
-
-        div[data-testid="stButton"] > button {
-            border-radius: 8px;
-            font-weight: 600;
-            background-color: #6C4DFF;
-            color: #F8FAFF;
-            border: none;
-            transition: all 0.2s;
+        [data-testid="stChatInput"] {
+            border-radius: 16px;
+            background: #0A2140;
+            border: 1px solid rgba(45, 212, 191, 0.45);
         }
-
-        div[data-testid="stButton"] > button:hover {
-            background-color: #7c5cff;
-            box-shadow: 0 0 10px rgba(108, 77, 255, 0.4);
+        [data-testid="stChatInput"] textarea {
+            color: var(--foam) !important;
+            font-family: 'Outfit', 'Noto Naskh Arabic', sans-serif;
         }
+        [data-testid="stChatInput"] button { color: var(--signal); }
 
-        .stTextInput input {
-            background-color: #102A56 !important;
-            color: #F8FAFF !important;
-            border: 1px solid rgba(167, 139, 250, 0.3) !important;
-            border-radius: 8px !important;
+        /* ---------- Voice ---------- */
+        .voice-card {
+            margin-top: 1.2rem; padding: 0.9rem 1.2rem 0.6rem 1.2rem;
+            border-radius: 16px 16px 0 0;
+            background: rgba(45, 212, 191, 0.07);
+            border: 1px solid rgba(45, 212, 191, 0.28); border-bottom: none;
+        }
+        .voice-title { font-weight: 600; color: #7FF0DF; }
+        .voice-sub { font-size: 0.85rem; color: var(--mist); }
+
+        audio { width: 100%; border-radius: 12px; margin-top: 0.4rem; }
+
+        /* ---------- Footer ---------- */
+        .app-footer {
+            margin-top: 2.2rem; padding: 1.1rem 0 0.4rem 0;
+            border-top: 1px solid var(--line);
+            text-align: center; color: var(--mist); font-size: 0.82rem; line-height: 1.7;
+        }
+        .app-footer b { color: var(--foam); font-weight: 600; }
+        .app-footer .note { font-size: 0.76rem; opacity: 0.85; }
+
+        @media (max-width: 640px) {
+            .hero { padding: 1.4rem 1.2rem; }
+            .hero-title { font-size: 1.8rem; }
         }
     </style>
     """,
@@ -149,14 +278,15 @@ st.markdown(
 # =========================================================
 
 WHISPER_MODEL_SIZE = "small"
+WHISPER_HINT = "PTCL, Flash Fiber, Shoq TV, Speed Bolt-On, Quad Play, internet package, minutes, SMS."
+
+# Whisper often mislabels spoken Urdu as one of these. For Pakistani users
+# they are almost always speaking Urdu/Punjabi, so we re-run as Urdu.
+URDU_FAMILY = {"hi", "pa", "ar", "fa", "ps", "sd"}
 
 
 @st.cache_resource(show_spinner=False)
 def load_whisper_model():
-    """
-    Load Faster-Whisper once and reuse it during the
-    Streamlit session/application lifetime.
-    """
     return WhisperModel(
         WHISPER_MODEL_SIZE,
         device="cpu",
@@ -166,42 +296,45 @@ def load_whisper_model():
 
 def transcribe_audio(audio_bytes):
     """
-    Convert recorded microphone audio bytes into text.
-
-    Returns:
-        str: Clean transcript.
+    Convert recorded audio into text. The spoken language is auto-detected,
+    with a correction for Urdu being mis-detected as Hindi/Arabic/Persian etc.
     """
     if not audio_bytes:
         return ""
 
-    import tempfile
-
     temp_audio_path = None
 
     try:
-        with tempfile.NamedTemporaryFile(
-            suffix=".webm",
-            delete=False,
-        ) as temp_audio:
+        with tempfile.NamedTemporaryFile(suffix=".webm", delete=False) as temp_audio:
             temp_audio.write(audio_bytes)
             temp_audio_path = temp_audio.name
 
         model = load_whisper_model()
 
-        segments, _ = model.transcribe(
+        segments, info = model.transcribe(
             temp_audio_path,
             beam_size=5,
             vad_filter=True,
+            initial_prompt=WHISPER_HINT,
+            condition_on_previous_text=False,
         )
 
-        transcript_parts = []
+        detected = getattr(info, "language", None)
+        probability = getattr(info, "language_probability", 1.0) or 0.0
 
-        for segment in segments:
-            text = segment.text.strip()
-            if text:
-                transcript_parts.append(text)
+        if detected != "ur" and detected != "en" and (
+            detected in URDU_FAMILY or probability < 0.55
+        ):
+            segments, info = model.transcribe(
+                temp_audio_path,
+                language="ur",
+                beam_size=5,
+                vad_filter=True,
+                condition_on_previous_text=False,
+            )
 
-        return " ".join(transcript_parts).strip()
+        parts = [segment.text.strip() for segment in segments if segment.text.strip()]
+        return " ".join(parts).strip()
 
     finally:
         if temp_audio_path:
@@ -211,32 +344,63 @@ def transcribe_audio(audio_bytes):
                 pass
 
 
+WHISPER_JUNK_PHRASES = (
+    "thanks for watching",
+    "thank you for watching",
+    "subscribe",
+    "amara.org",
+    "like and subscribe",
+)
+
+
 def is_valid_transcript(text):
-    """
-    Validate whether the transcribed text contains meaningful words
-    or is just Whisper hallucinated noise/symbols.
-    """
+    """Reject empty text, hallucinated boilerplate and symbol noise."""
     if not text:
         return False
     clean = text.strip()
     if len(clean) < 2:
         return False
-    # Check for excessive unprintable/non-standard unicode characters or garbage blocks
-    garbage_chars = sum(1 for c in clean if ord(c) > 1000 and not ('\u0600' <= c <= '\u06FF'))
-    if garbage_chars > 3 or len(re.findall(r'[^\w\s]', clean)) > len(clean) * 0.4:
+    lowered = clean.lower()
+    if any(phrase in lowered for phrase in WHISPER_JUNK_PHRASES):
+        return False
+
+    def allowed(ch):
+        code = ord(ch)
+        return (
+            code < 0x250
+            or 0x0600 <= code <= 0x06FF
+            or 0x0750 <= code <= 0x077F
+            or 0xFB50 <= code <= 0xFDFF
+            or 0xFE70 <= code <= 0xFEFF
+            or 0x0900 <= code <= 0x097F
+            or 0x0A00 <= code <= 0x0A7F
+            or ch.isalpha()
+        )
+
+    odd = sum(1 for c in clean if not allowed(c))
+    symbols = len(re.findall(r"[^\w\s]", clean))
+    if odd > 3 or symbols > len(clean) * 0.4:
         return False
     return True
 
 
 # =========================================================
-# LANGUAGE DETECTION & UTILITIES
+# LANGUAGE UTILITIES
 # =========================================================
 
+def is_rtl_text(text):
+    """True when most letters are Arabic-script (Urdu, Punjabi Shahmukhi, Arabic, ...)."""
+    if not text:
+        return False
+    letters = [c for c in text if c.isalpha()]
+    if not letters:
+        return False
+    rtl = sum(1 for c in letters if "\u0600" <= c <= "\u06FF" or "\u0750" <= c <= "\u077F")
+    return rtl / len(letters) > 0.5
+
+
 def detect_query_language(text):
-    """
-    Robust query language detection supporting Urdu script,
-    Roman Urdu, and English while ignoring standard PTCL terms.
-    """
+    """Cheap heuristic used only as a fallback when the LLM analysis fails."""
     if not text:
         return "en"
 
@@ -244,57 +408,100 @@ def detect_query_language(text):
     if urdu_chars >= 2:
         return "ur"
 
-    roman_urdu_keywords = [
-        "kon", "kya", "hain", "hai", "kese", "batao", "mujhe", 
-        "packages", "wala", "aur", "ki", "ka", "ke", "mein", 
-        "se", "karnay", "konsa", "konsay", "bataen"
-    ]
-    lower_text = text.lower()
-    words = lower_text.split()
-    match_count = sum(1 for w in words if w in roman_urdu_keywords)
-    
-    if match_count >= 1 or any(k in lower_text for k in ["kon kon", "kya hai", "bataen", "packages kon"]):
+    roman_urdu_keywords = {
+        "kon", "kya", "hain", "hai", "kese", "kaise", "batao", "bataen", "bataye",
+        "mujhe", "wala", "aur", "ki", "ka", "ke", "mein", "main", "se", "karnay",
+        "konsa", "konsay", "kitna", "kitne", "chahiye", "hota", "hoti", "ko", "ap", "aap",
+    }
+    words = re.findall(r"[a-z]+", text.lower())
+    if sum(1 for w in words if w in roman_urdu_keywords) >= 1:
         return "roman_ur"
-
     return "en"
 
 
+def normalize_language(name):
+    """Turn a free-form language name into a stable key such as 'roman_urdu'."""
+    if not name:
+        return "english"
+    key = str(name).strip().lower().replace("-", " ").replace("_", " ")
+    if "roman" in key or "urdu (latin" in key or "hinglish" in key:
+        return "roman_urdu"
+    key = re.sub(r"\(.*?\)", "", key).strip()
+    if not key:
+        return "english"
+    return key.replace(" ", "_")
+
+
+def language_label(key):
+    labels = {
+        "english": "English",
+        "urdu": "Urdu (written in Urdu/Arabic script)",
+        "roman_urdu": "Roman Urdu (Urdu written with English/Latin letters only)",
+        "punjabi": "Punjabi (in the same script the user used)",
+    }
+    return labels.get(key, key.replace("_", " ").title())
+
+
+# gTTS voice per language (Arabic-script regional languages use the Urdu voice).
+TTS_LANG_MAP = {
+    "english": "en",
+    "urdu": "ur",
+    "roman_urdu": "ur",
+    "punjabi": "ur",
+    "pashto": "ur",
+    "sindhi": "ur",
+    "hindi": "hi",
+    "arabic": "ar",
+    "french": "fr",
+    "spanish": "es",
+    "german": "de",
+    "turkish": "tr",
+    "chinese": "zh-CN",
+}
+
+
 def clean_text_for_tts(text):
-    """
-    Clean markdown symbols, bullets, emojis, URLs, and formatting
-    from the response before sending it to TTS.
-    """
+    """Strip markdown, emojis, URLs and bullets so speech sounds natural."""
     if not text:
         return ""
-    cleaned = re.sub(r'[\#\*\_\-\`\~\[\]\(\)]', ' ', text)
-    cleaned = re.sub(r'http\S+', '', cleaned)
-    cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+    cleaned = re.sub(r"http\S+", " ", text)
+    cleaned = re.sub(r"[\U0001F000-\U0001FAFF\u2600-\u27BF\uFE0F]", " ", cleaned)
+    cleaned = re.sub(r"(?m)^\s*[-*•]\s+", "", cleaned)
+    cleaned = re.sub(r"[#*_`~\[\]()|>]", " ", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
     return cleaned
 
 
-def format_source_name(filename):
-    """Convert technical filename into a clean user-friendly document name."""
-    if not filename:
-        return "PTCL Knowledge Base"
-    name = Path(filename).stem
-    cleaned = re.sub(r'^[0-9]+[_]*', '', name)
-    cleaned = cleaned.replace('_', ' ').title()
-    if not cleaned.lower().startswith("ptcl"):
-        return f"PTCL {cleaned}"
-    return cleaned
+def truncate_for_speech(text, limit=700):
+    if len(text) <= limit:
+        return text
+    cut = text[:limit]
+    last_stop = max(cut.rfind("."), cut.rfind("۔"), cut.rfind("!"), cut.rfind("?"))
+    if last_stop > limit * 0.5:
+        return cut[: last_stop + 1]
+    return cut
+
+
+def sanitize_answer(text):
+    """Safety net: never show source/document references to the user."""
+    if not text:
+        return text
+    text = re.sub(r"(?im)^\s*[-*•]?\s*(sources?|references?)\s*\d*\s*:.*$", "", text)
+    text = re.sub(r"\(\s*(?:source|document)\s*\d+\s*\)", "", text, flags=re.I)
+    text = re.sub(r"\b(?:source|document)\s*\d+\b", "", text, flags=re.I)
+    text = re.sub(r"[\w\-.]+\.(?:pdf|docx?|txt)\b", "", text, flags=re.I)
+    text = re.sub(r"[ \t]{2,}", " ", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
 
 
 # =========================================================
 # RETRIEVAL CONFIGURATION
 # =========================================================
 
-TOP_K = 5
+TOP_K = 6
 SIMILARITY_THRESHOLD = 0.30
 
-
-# =========================================================
-# QUERY RETRIEVAL
-# =========================================================
 
 def retrieve_relevant_chunks(
     query: str,
@@ -302,10 +509,6 @@ def retrieve_relevant_chunks(
     top_k: int = TOP_K,
     similarity_threshold: float = SIMILARITY_THRESHOLD,
 ):
-    """
-    Convert only the user's query into an embedding and retrieve
-    the most relevant pre-embedded knowledge-base chunks from FAISS.
-    """
     query = query.strip()
     if not query:
         return []
@@ -320,70 +523,35 @@ def retrieve_relevant_chunks(
         normalize_embeddings=True,
         convert_to_numpy=True,
     )
+    query_embedding = np.asarray(query_embedding, dtype="float32")
 
-    query_embedding = np.asarray(
-        query_embedding,
-        dtype="float32",
-    )
-
-    scores, indices = index.search(
-        query_embedding,
-        top_k,
-    )
+    scores, indices = index.search(query_embedding, top_k)
 
     results = []
-
     for score, index_position in zip(scores[0], indices[0]):
         if index_position < 0:
             continue
-
         similarity = float(score)
-
         if similarity < similarity_threshold:
             continue
-
-        chunk_text = chunks[index_position]
-        chunk_metadata = metadata[index_position]
-
         results.append(
             {
-                "text": chunk_text,
-                "metadata": chunk_metadata,
+                "text": chunks[index_position],
+                "metadata": metadata[index_position],
                 "similarity": similarity,
             }
         )
-
     return results
 
 
 def format_retrieved_context(results):
     """
-    Convert retrieved chunks into a compact context block
-    for the Groq model.
+    Build the context for the model. Document names and page numbers are
+    deliberately left out so the assistant can never repeat them.
     """
     if not results:
         return ""
-
-    context_parts = []
-
-    for number, result in enumerate(results, start=1):
-        metadata = result["metadata"]
-        source_file = metadata.get("source_file", "Unknown source")
-        page_number = metadata.get("page_number", "N/A")
-
-        context_parts.append(
-            f"""
-SOURCE {number}
-Document: {source_file}
-Page: {page_number}
-Similarity: {result["similarity"]:.3f}
-
-Content:
-{result["text"]}
-""".strip()
-        )
-
-    return "\n\n".join(context_parts)
+    return "\n\n---\n\n".join(result["text"].strip() for result in results)
 
 
 # =========================================================
@@ -435,7 +603,6 @@ def initialize_knowledge_base():
 
     if index.ntotal != len(chunks):
         raise RuntimeError("FAISS vector count does not match the number of chunks.")
-
     if len(chunks) != len(metadata):
         raise RuntimeError("Chunk count does not match metadata count.")
 
@@ -471,82 +638,250 @@ def get_groq_client():
     return Groq(api_key=api_key)
 
 
+def call_llm(messages, max_tokens=1500, temperature=0.1):
+    """Single place for Groq calls. Uses low reasoning effort for speed when supported."""
+    client = get_groq_client()
+    if client is None:
+        raise RuntimeError("Groq client is not configured.")
+
+    kwargs = dict(
+        model=GROQ_MODEL,
+        messages=messages,
+        temperature=temperature,
+        max_tokens=max_tokens,
+    )
+    try:
+        response = client.chat.completions.create(reasoning_effort="low", **kwargs)
+    except Exception:
+        response = client.chat.completions.create(**kwargs)
+    return (response.choices[0].message.content or "").strip()
+
+
 # =========================================================
-# GROUNDED RAG SYSTEM PROMPT
+# QUERY UNDERSTANDING (any language -> English search query)
 # =========================================================
+# The embedding model is English-only, so Urdu / Roman Urdu / other
+# languages are first interpreted into a clean English search query.
+# The final answer is still written in the user's own language.
 
-SYSTEM_PROMPT = """
-You are PTCL Packages Assistant, an expert guide for PTCL packages and services.
-Answer questions strictly and accurately from the supplied PTCL knowledge-base context.
+def format_history(history, limit=4, chars=300):
+    lines = []
+    for item in history[-limit:]:
+        who = "User" if item["role"] == "user" else "Assistant"
+        lines.append(f"{who}: {item['content'][:chars]}")
+    return "\n".join(lines)
 
-STRICT RULES:
-1. Never invent PTCL package names, prices, speeds, validity, internet data, minutes, SMS allowances, activation codes, or deactivation codes.
-2. Never use outside knowledge when required information is not present in the supplied context.
-3. If the information genuinely cannot be found in the context, respond politely in the SAME language as the user's query:
-   - For English queries: "I couldn't find that specific information in my current PTCL knowledge base. Please try asking about PTCL internet packages, Flash Fiber, voice/mobile packages, Shoq TV, Speed Bolt-On, Quad Play, or advance packages."
-   - For Urdu queries: "مجھے موجودہ PTCL معلومات میں اس سوال کی مخصوص تفصیل نہیں ملی۔ آپ PTCL انٹرنیٹ پیکیجز، Flash Fiber، Voice/Mobile Packages، Shoq TV، Speed Bolt-On، Quad Play یا Advance Packages کے بارے میں پوچھ سکتے ہیں۔"
-   - For Roman Urdu queries: "Mujhe mojooda PTCL knowledge base mein is sawal ki tafseel nahi mili. Aap PTCL internet packages, Flash Fiber, voice/mobile packages, Shoq TV, Speed Bolt-On, Quad Play ya advance packages ke baray mein pooch sakte hain."
-4. Match the user's query language strictly:
-   - If user asks in English, answer in clear, professional English.
-   - If user asks in Urdu script, answer in natural Urdu script.
-   - If user asks in Roman Urdu, answer naturally in Roman Urdu.
-5. Keep answers concise, useful, and professional. Use bullet points or structured lists when appropriate. Do not dump entire text verbatim.
 
-CONTEXT:
-{context}
+UNDERSTAND_PROMPT = """You analyse messages for a PTCL (Pakistan Telecommunication Company Limited) customer assistant.
+The message may be in ANY language (English, Urdu script, Roman Urdu, Punjabi, Pashto, Sindhi, Hindi, Arabic, mixed...).
+It may come from speech recognition, so spelling can be imperfect: use common sense.
+
+Return ONLY a JSON object, no other text:
+{"language": "<language the user wrote/spoke, in English, e.g. English, Urdu, Roman Urdu, Punjabi, Hindi, Arabic, French>",
+ "english_query": "<a clear standalone English search query about PTCL; keep product names and numbers; resolve follow-ups using the conversation>",
+ "intent": "<greeting | thanks | question>"}
+
+Rules:
+- "Roman Urdu" means Urdu written in Latin letters (e.g. "internet ke packages kon se hain").
+- Use intent "greeting" for hello/salam/hi only, "thanks" for thank-you only, otherwise "question".
+
+Recent conversation (may be empty):
+{history}
+
+User message:
+{query}
 """
 
 
-def generate_grounded_answer(query: str, retrieved_results: list):
-    query = query.strip()
-    query_lang = detect_query_language(query)
+def understand_query(query, history):
+    fallback_key = {"ur": "urdu", "roman_ur": "roman_urdu", "en": "english"}[detect_query_language(query)]
+    fallback = {"language": fallback_key, "english_query": query, "intent": "question"}
 
-    if not query:
-        if query_lang == "ur":
-            return "براہ کرم PTCL پیکیجز یا خدمات کے بارے میں کوئی سوال درج کریں۔"
-        elif query_lang == "roman_ur":
-            return "Barah-e-karam PTCL packages ya services ke baray mein koi sawal darj karen."
-        return "Please enter a question about PTCL packages or services."
-
-    if not retrieved_results:
-        if query_lang == "ur":
-            return "मुझे موجودہ PTCL معلومات میں اس سوال کی مخصوص تفصیل نہیں ملی۔ آپ PTCL انٹرنیٹ پیکیجز، Flash Fiber، Voice/Mobile Packages، Shoq TV، Speed Bolt-On، Quad Play یا Advance Packages کے بارے میں پوچھ سکتے ہیں۔"
-        elif query_lang == "roman_ur":
-            return "Mujhe mojooda PTCL knowledge base mein is sawal ki tafseel nahi mili. Aap PTCL internet packages, Flash Fiber, voice/mobile packages, Shoq TV, Speed Bolt-On, Quad Play ya advance packages ke baray mein pooch sakte hain."
-        return "I couldn't find that specific information in my current PTCL knowledge base. Please try asking about PTCL internet packages, Flash Fiber, voice/mobile packages, Shoq TV, Speed Bolt-On, Quad Play, or advance packages."
-
-    client = get_groq_client()
-
-    if client is None:
-        return "Sorry, I couldn't process that request right now. Please check API key configuration or try again shortly."
-
-    context = format_retrieved_context(retrieved_results)
-    prompt = SYSTEM_PROMPT.format(context=context)
+    if get_groq_client() is None:
+        return fallback
 
     try:
-        response = client.chat.completions.create(
-            model=GROQ_MODEL,
-            messages=[
-                {"role": "system", "content": prompt},
-                {"role": "user", "content": query},
-            ],
-            temperature=0.1,
-            max_tokens=700,
-        )
+        prompt = UNDERSTAND_PROMPT.replace("{history}", format_history(history) or "(none)").replace("{query}", query)
+        raw = call_llm([{"role": "user", "content": prompt}], max_tokens=600, temperature=0)
+        match = re.search(r"\{.*\}", raw, re.DOTALL)
+        data = json.loads(match.group(0))
 
-        answer = response.choices[0].message.content
+        intent = str(data.get("intent", "question")).strip().lower()
+        if intent not in {"greeting", "thanks", "question"}:
+            intent = "question"
 
-        if not answer or not answer.strip():
-            if query_lang == "ur":
-                return "معذرت، میں دستیاب PTCL ڈیٹا بیس سے جواب تخلیق کرنے سے قاصر رہا۔"
-            elif query_lang == "roman_ur":
-                return "Maazrat, mein dastiyab PTCL database se jawab takhleeq karne se qasir raha."
-            return "I couldn't generate an answer from the available PTCL knowledge base."
-
-        return answer.strip()
-
+        english_query = str(data.get("english_query") or query).strip() or query
+        return {
+            "language": normalize_language(data.get("language")),
+            "english_query": english_query,
+            "intent": intent,
+        }
     except Exception:
-        return "Sorry, I couldn't process that request right now. Please try again."
+        return fallback
+
+
+# =========================================================
+# ANSWER GENERATION
+# =========================================================
+
+SYSTEM_PROMPT = """
+You are PTCL Assistant, a friendly and professional virtual assistant for PTCL packages and services.
+Answer strictly and accurately from the PTCL information provided below.
+
+RULES:
+1. Never invent PTCL package names, prices, speeds, validity, data, minutes, SMS allowances, activation or deactivation codes.
+2. Never use outside knowledge when the required information is not in the provided information.
+3. If the information is missing, politely say you could not find that specific detail, and suggest asking about PTCL internet packages, Flash Fiber, voice/mobile packages, Shoq TV, Speed Bolt-On, Quad Play or advance packages. Say this in the user's language.
+4. LANGUAGE: reply ONLY in this language: {language}.
+   - Urdu: use natural Urdu script (never Hindi/Devanagari).
+   - Roman Urdu: use Latin letters only, natural everyday Urdu.
+   - Keep PTCL product names, prices (Rs.), speeds (Mbps) and codes exactly as given.
+5. NEVER mention documents, files, file names, sources, page numbers, links to documents, "context" or "knowledge base". Just answer naturally as PTCL Assistant.
+6. Be concise and helpful. Use short bullet points for lists of packages, and put key numbers (price, speed, validity) up front. Do not dump raw text.
+7. Use the earlier conversation only to understand follow-up questions.
+
+PTCL INFORMATION:
+{context}
+"""
+
+NOT_FOUND_MESSAGES = {
+    "english": "I couldn't find that specific information right now. Please try asking about PTCL internet packages, Flash Fiber, voice/mobile packages, Shoq TV, Speed Bolt-On, Quad Play, or advance packages.",
+    "urdu": "مجھے اس سوال کی مخصوص تفصیل ابھی نہیں ملی۔ آپ PTCL انٹرنیٹ پیکیجز، Flash Fiber، Voice/Mobile Packages، Shoq TV، Speed Bolt-On، Quad Play یا Advance Packages کے بارے میں پوچھ سکتے ہیں۔",
+    "roman_urdu": "Mujhe is sawal ki makhsoos tafseel abhi nahi mili. Aap PTCL internet packages, Flash Fiber, voice/mobile packages, Shoq TV, Speed Bolt-On, Quad Play ya advance packages ke baray mein pooch sakte hain.",
+}
+
+GREETING_MESSAGES = {
+    "english": "Hello! I'm your PTCL Assistant. Ask me about internet, Flash Fiber, voice and mobile packages, Shoq TV and more.",
+    "urdu": "السلام علیکم! میں آپ کا PTCL اسسٹنٹ ہوں۔ انٹرنیٹ، Flash Fiber، وائس اور موبائل پیکیجز، Shoq TV اور دیگر خدمات کے بارے میں پوچھیں۔",
+    "roman_urdu": "Assalam o Alaikum! Main aap ka PTCL Assistant hoon. Internet, Flash Fiber, voice aur mobile packages, Shoq TV aur dusri services ke baray mein poochiye.",
+}
+
+GENERIC_ERROR = "Sorry, I couldn't process that request right now. Please try again."
+
+
+def generate_smalltalk(query, language):
+    """Reply to greetings / thanks without touching the knowledge base."""
+    if get_groq_client() is not None:
+        try:
+            system = (
+                "You are PTCL Assistant. The user sent a greeting or a thank-you. "
+                f"Reply warmly in 1-2 short sentences in {language_label(language)}, "
+                "and invite them to ask about PTCL internet, Flash Fiber, voice/mobile packages, "
+                "Shoq TV, Speed Bolt-On or Quad Play. Do not state any package details."
+            )
+            answer = call_llm(
+                [{"role": "system", "content": system}, {"role": "user", "content": query}],
+                max_tokens=400,
+                temperature=0.4,
+            )
+            if answer:
+                return sanitize_answer(answer)
+        except Exception:
+            pass
+    return GREETING_MESSAGES.get(language, GREETING_MESSAGES["english"])
+
+
+def generate_grounded_answer(query, language, retrieved_results, history):
+    query = query.strip()
+
+    if not retrieved_results and language in NOT_FOUND_MESSAGES:
+        return NOT_FOUND_MESSAGES[language]
+
+    client = get_groq_client()
+    if client is None:
+        return GENERIC_ERROR
+
+    context = format_retrieved_context(retrieved_results) or "(No relevant information was found.)"
+    prompt = SYSTEM_PROMPT.replace("{language}", language_label(language)).replace("{context}", context)
+
+    messages = [{"role": "system", "content": prompt}]
+    for item in history[-4:]:
+        messages.append({"role": item["role"], "content": item["content"][:600]})
+    messages.append({"role": "user", "content": query})
+
+    try:
+        answer = call_llm(messages, max_tokens=1500, temperature=0.1)
+        answer = sanitize_answer(answer)
+        if not answer:
+            return NOT_FOUND_MESSAGES.get(language, NOT_FOUND_MESSAGES["english"])
+        return answer
+    except Exception:
+        return GENERIC_ERROR
+
+
+# =========================================================
+# TEXT-TO-SPEECH
+# =========================================================
+
+def to_urdu_speech_text(text):
+    """
+    gTTS's Urdu voice cannot read Latin letters properly, so Roman Urdu (and
+    English brand words inside Urdu) are rewritten in Urdu script for speaking.
+    """
+    if get_groq_client() is None:
+        return ""
+    try:
+        system = (
+            "Rewrite the user's text in natural Urdu script so a text-to-speech engine can read it aloud. "
+            "If it is Roman Urdu, transliterate it to Urdu script. Write English words, brand names and units "
+            "phonetically in Urdu script (e.g. PTCL -> پی ٹی سی ایل, Mbps -> ایم بی پی ایس). Keep numbers as digits. "
+            "Output only the rewritten text."
+        )
+        return call_llm(
+            [{"role": "system", "content": system}, {"role": "user", "content": text}],
+            max_tokens=1200,
+            temperature=0,
+        )
+    except Exception:
+        return ""
+
+
+def prepare_speech_text(answer, language):
+    text = truncate_for_speech(clean_text_for_tts(answer))
+    if not text:
+        return ""
+    if language == "roman_urdu":
+        return to_urdu_speech_text(text)
+    if language == "urdu" and re.search(r"[A-Za-z]", text):
+        return to_urdu_speech_text(text) or text
+    return text
+
+
+def generate_tts_audio(text, language):
+    """Return MP3 bytes spoken in the same language as the answer (or None)."""
+    lang_code = TTS_LANG_MAP.get(language)
+    if not text or not lang_code:
+        return None
+    try:
+        speech = prepare_speech_text(text, language)
+        if not speech:
+            return None
+        buffer = BytesIO()
+        gTTS(text=speech, lang=lang_code, slow=False).write_to_fp(buffer)
+        buffer.seek(0)
+        return buffer.read()
+    except Exception:
+        return None
+
+
+def render_audio(audio_bytes, autoplay=False):
+    if not audio_bytes:
+        return
+    if autoplay:
+        try:
+            st.audio(audio_bytes, format="audio/mp3", autoplay=True)
+            return
+        except TypeError:
+            pass  # older Streamlit without autoplay support
+    st.audio(audio_bytes, format="audio/mp3")
+
+
+def render_text(text):
+    """Render answer text, switching to right-to-left layout for Urdu/Arabic-script text."""
+    if is_rtl_text(text):
+        st.markdown(f'<div class="rtl-block" dir="rtl">\n\n{text}\n\n</div>', unsafe_allow_html=True)
+    else:
+        st.markdown(text)
 
 
 # =========================================================
@@ -555,29 +890,6 @@ def generate_grounded_answer(query: str, retrieved_results: list):
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
-
-if "last_query" not in st.session_state:
-    st.session_state.last_query = ""
-
-
-# =========================================================
-# HEADER
-# =========================================================
-
-st.markdown(
-    """
-    <div class="main-header">
-        <div class="main-title">PTCL Assistant</div>
-        <div class="main-subtitle">
-            Your smart assistant for PTCL packages, internet, voice, mobile and services.
-        </div>
-        <div class="developer-text">
-            Developed by Areeba Imran
-        </div>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
 
 
 # =========================================================
@@ -660,21 +972,14 @@ def compare_knowledge_base_manifests():
     return status, current_documents, saved_documents
 
 
+@st.cache_data(ttl=120, show_spinner=False)
 def get_knowledge_base_status():
+    """Cached so documents are not re-hashed on every Streamlit rerun."""
     try:
-        status, current_documents, saved_documents = compare_knowledge_base_manifests()
-        return {
-            "status": status,
-            "current_count": len(current_documents),
-            "saved_count": len(saved_documents),
-        }
-    except Exception as error:
-        return {
-            "status": "error",
-            "current_count": 0,
-            "saved_count": 0,
-            "error": str(error),
-        }
+        status, _current, _saved = compare_knowledge_base_manifests()
+        return {"status": status}
+    except Exception:
+        return {"status": "error"}
 
 
 def rebuild_knowledge_base():
@@ -683,7 +988,7 @@ def rebuild_knowledge_base():
 
     build_script = PROJECT_DIR / "scripts" / "build_knowledge_base.py"
     if not build_script.exists():
-        return False, "Knowledge-base build script was not found."
+        return False, "Build script was not found."
 
     try:
         result = subprocess.run(
@@ -695,254 +1000,295 @@ def rebuild_knowledge_base():
         )
 
         if result.returncode != 0:
-            return False, result.stderr.strip() or result.stdout.strip() or "Rebuild failed."
+            return False, "Rebuild failed. Please check the build script logs."
 
-        for cache_func in [load_faiss_index, load_chunks, load_metadata, load_manifest, load_embedding_model]:
+        for cache_func in [
+            load_faiss_index, load_chunks, load_metadata,
+            load_manifest, load_embedding_model, get_knowledge_base_status,
+        ]:
             try:
                 cache_func.clear()
             except Exception:
                 pass
 
-        return True, result.stdout.strip() or "Knowledge base rebuilt successfully."
+        return True, "Knowledge base rebuilt successfully."
     except subprocess.TimeoutExpired:
-        return False, "Knowledge-base rebuild timed out."
+        return False, "Rebuild timed out."
     except Exception:
-        return False, "Knowledge-base rebuild could not be completed."
+        return False, "Rebuild could not be completed."
 
 
 # =========================================================
 # SIDEBAR
 # =========================================================
 
+required_files = [CHUNKS_FILE, METADATA_FILE, MANIFEST_FILE, FAISS_FILE]
+kb_ready = all(file.exists() for file in required_files)
+kb_status = get_knowledge_base_status()["status"]
+
 with st.sidebar:
-    st.markdown("### PTCL Assistant")
-    st.markdown("Ask about PTCL packages and services.")
-    st.markdown("---")
-    
-    st.markdown("### 📚 Quick Categories")
-    st.markdown("• Internet Packages\n• Flash Fiber\n• Voice & Mobile\n• Shoq TV\n• Speed Bolt-On\n• Quad Play\n• Advance Packages")
-    
-    st.markdown("---")
-    st.markdown("### Knowledge Base")
+    st.markdown(
+        """
+        <div class="brand">
+            <div class="brand-logo">📡</div>
+            <div>
+                <div class="brand-name">PTCL Assistant</div>
+                <div class="brand-tag">Packages &amp; services, answered</div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
-    required_files = [CHUNKS_FILE, METADATA_FILE, MANIFEST_FILE, FAISS_FILE]
-    kb_ready = all(file.exists() for file in required_files)
+    st.markdown('<div class="side-title">Topics you can ask about</div>', unsafe_allow_html=True)
+    st.markdown(
+        """
+        <div class="pill-wrap">
+            <span class="pill">Internet</span>
+            <span class="pill">Flash Fiber</span>
+            <span class="pill">Voice &amp; Mobile</span>
+            <span class="pill">Shoq TV</span>
+            <span class="pill">Speed Bolt-On</span>
+            <span class="pill">Quad Play</span>
+            <span class="pill">Advance Packages</span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
-    kb_status_info = get_knowledge_base_status()
-    kb_status = kb_status_info["status"]
-    current_doc_count = kb_status_info["current_count"]
+    st.markdown('<div class="side-title">Voice replies</div>', unsafe_allow_html=True)
+    st.toggle("Read answers aloud", value=True, key="tts_enabled")
 
+    st.markdown('<div class="side-title">Status</div>', unsafe_allow_html=True)
     if kb_ready and kb_status == "unchanged":
-        st.success("Knowledge base ready")
-        st.caption(f"{current_doc_count} source documents verified.")
-    elif kb_ready and kb_status == "changed":
-        st.warning("Knowledge base documents changed. Rebuild required.")
-    elif kb_status == "missing_saved_manifest":
-        st.warning("Knowledge-base manifest missing. Rebuild required.")
-    elif kb_status == "error":
-        st.warning("Knowledge-base status unverified.")
+        st.markdown('<span class="status-chip status-ok"><span class="dot"></span>Assistant ready</span>', unsafe_allow_html=True)
+    elif kb_ready and kb_status in ("changed", "missing_saved_manifest"):
+        st.markdown('<span class="status-chip status-warn"><span class="dot"></span>Update available</span>', unsafe_allow_html=True)
+    elif kb_ready:
+        st.markdown('<span class="status-chip status-warn"><span class="dot"></span>Ready (unverified)</span>', unsafe_allow_html=True)
     else:
-        st.error("Knowledge base incomplete")
+        st.markdown('<span class="status-chip status-bad"><span class="dot"></span>Setup incomplete</span>', unsafe_allow_html=True)
 
-    if st.button("Rebuild Knowledge Base", use_container_width=True, type="secondary"):
-        with st.spinner("Rebuilding knowledge base..."):
-            rebuild_success, rebuild_message = rebuild_knowledge_base()
-        if rebuild_success:
-            st.success("Knowledge base rebuilt successfully.")
-            st.rerun()
-        else:
-            st.error(f"Rebuild failed: {rebuild_message}")
-
-    st.markdown("---")
-    if st.button("Clear Conversation", use_container_width=True):
+    st.write("")
+    if st.button("Clear conversation", use_container_width=True):
         st.session_state.messages = []
-        st.session_state.last_query = ""
+        st.session_state.pop("pending_query", None)
         st.rerun()
 
+    with st.expander("Admin tools"):
+        if st.button("Rebuild knowledge base", use_container_width=True):
+            with st.spinner("Rebuilding..."):
+                rebuild_success, rebuild_message = rebuild_knowledge_base()
+            if rebuild_success:
+                st.success(rebuild_message)
+                st.rerun()
+            else:
+                st.error(rebuild_message)
+
     st.markdown("---")
-    st.markdown("### Developer")
-    st.caption("Designed & Developed by Areeba Imran<br>© 2026 Areeba Imran. All rights reserved.", unsafe_allow_html=True)
+    st.markdown(
+        '<div class="dev-credit">Designed &amp; developed by<br><b>Areeba Imran</b></div>',
+        unsafe_allow_html=True,
+    )
 
 
 # =========================================================
-# MAIN LAYOUT & AUDIO HELPERS
+# HERO
 # =========================================================
 
-main_column, info_column = st.columns([2.4, 1], gap="large")
+st.markdown(
+    """
+    <div class="hero">
+        <div class="hero-title">PTCL Assistant</div>
+        <div class="hero-sub">
+            Ask about internet, Flash Fiber, voice and mobile packages, TV and more —
+            type or speak in the language you're comfortable with.
+        </div>
+        <div class="hero-badges">
+            <span class="badge">🎙️ Voice enabled</span>
+            <span class="badge">🌐 Urdu · English · Roman Urdu</span>
+            <span class="badge">⚡ Instant answers</span>
+        </div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 
 
-def render_voice_input():
-    st.markdown("**Voice Input**", unsafe_allow_html=True)
+# =========================================================
+# LAYOUT: chat on top, voice below, input pinned at the bottom
+# =========================================================
+
+chat_area = st.container()
+voice_area = st.container()
+text_query = st.chat_input("Ask about PTCL packages — English, اردو or Roman Urdu")
+
+pending_query = st.session_state.pop("pending_query", None)
+
+voice_query = None
+with voice_area:
+    st.markdown(
+        """
+        <div class="voice-card">
+            <div class="voice-title">🎙️ Talk to the assistant</div>
+            <div class="voice-sub">Speak in any language. The assistant replies in the same language, in text and voice.</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
     recording = mic_recorder(
-        start_prompt="Start recording",
-        stop_prompt="Stop recording",
+        start_prompt="🎙️ Start recording",
+        stop_prompt="⏹️ Stop & send",
         just_once=True,
         use_container_width=True,
         key="ptcl_voice_recorder",
     )
-    if not recording:
-        return None
-    return recording.get("bytes")
-
-
-def detect_tts_language(text):
-    if not text:
-        return "en"
-    urdu_chars = sum(1 for char in text if "\u0600" <= char <= "\u06FF")
-    return "ur" if urdu_chars >= 2 else "en"
-
-
-def generate_tts_audio(text):
-    if not text or not text.strip():
-        return None
-    try:
-        clean_speech = clean_text_for_tts(text)
-        if not clean_speech:
-            return None
-        language = detect_tts_language(text)
-        audio_buffer = BytesIO()
-        tts = gTTS(text=clean_speech, lang=language, slow=False)
-        tts.write_to_fp(audio_buffer)
-        audio_buffer.seek(0)
-        return audio_buffer.read()
-    except Exception:
-        return None
-
-
-# =========================================================
-# ASSISTANT CHAT CONTAINER & WELCOME SCREEN
-# =========================================================
-
-with main_column:
-    if not st.session_state.messages:
-        st.markdown(
-            """
-            <div class="welcome-card">
-                <h3>Welcome to PTCL Assistant</h3>
-                <p style="color: #A78BFA; margin-bottom: 1rem;">
-                    Ask me about PTCL internet packages, Flash Fiber, voice & mobile packages, Shoq TV, Speed Bolt-On, Quad Play and more.
-                </p>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-        st.markdown("#### Suggested Questions:")
-        col_s1, col_s2 = st.columns(2)
-        
-        suggested_clicked = None
-        with col_s1:
-            if st.button("What internet packages are available?", use_container_width=True):
-                suggested_clicked = "What internet packages are available?"
-            if st.button("Tell me about Flash Fiber.", use_container_width=True):
-                suggested_clicked = "Tell me about Flash Fiber."
-        with col_s2:
-            if st.button("What are the PTCL voice and mobile packages?", use_container_width=True):
-                suggested_clicked = "What are the PTCL voice and mobile packages?"
-            if st.button("انٹرنیٹ کے کون کون سے پیکیجز ہیں؟", use_container_width=True):
-                suggested_clicked = "انٹرنیٹ کے کون کون سے پیکیجز ہیں؟"
-
-        if suggested_clicked:
-            st.session_state.last_query = suggested_clicked
-
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
-            if message["role"] == "assistant" and message.get("audio"):
-                st.audio(message["audio"], format="audio/mp3")
-            if message["role"] == "assistant" and message.get("sources"):
-                with st.expander("Sources", expanded=False):
-                    for source in message["sources"]:
-                        st.markdown(f"**Document:** {source.get('source_file', 'PTCL Knowledge Base')}")
-                        st.markdown(f"**Page:** {source.get('page_number', 'N/A')}")
-                        st.markdown(f"**Similarity:** {source.get('similarity', 0.0):.4f}")
-                        st.divider()
-
-    query = st.chat_input("Ask about PTCL packages, internet, voice, minutes, SMS, validity...")
-    voice_audio = render_voice_input()
-    voice_query = None
+    voice_audio = recording.get("bytes") if recording else None
 
     if voice_audio:
-        with st.spinner("Transcribing your voice..."):
+        with st.spinner("Listening to your voice..."):
             try:
-                raw_voice_query = transcribe_audio(voice_audio)
-                if is_valid_transcript(raw_voice_query):
-                    voice_query = raw_voice_query
+                heard = transcribe_audio(voice_audio)
+                if is_valid_transcript(heard):
+                    voice_query = heard
                 else:
-                    st.warning("Voice recording saaf nahi thi ya noise zyada thi. Barah-e-karam mic par saaf bol kar dobara record karein.")
+                    st.warning(
+                        "I couldn't hear that clearly. Please speak closer to the mic and try again. / "
+                        "آواز صاف نہیں تھی، براہ کرم دوبارہ کوشش کریں۔"
+                    )
             except Exception:
                 st.error("Voice transcription failed. Please try recording again.")
 
-        if voice_query:
-            st.info(f"Voice transcript: {voice_query}")
+active_query = None
+from_voice = False
+if voice_query:
+    active_query, from_voice = voice_query, True
+elif text_query and text_query.strip():
+    active_query = text_query.strip()
+elif pending_query and pending_query.strip():
+    active_query = pending_query.strip()
 
-    active_query = st.session_state.pop("last_query", None)
-    if voice_query:
-        active_query = voice_query
-    elif query:
-        active_query = query
 
-    if active_query and active_query.strip():
-        active_query = active_query.strip()
-        st.session_state.messages.append({"role": "user", "content": active_query})
+SUGGESTIONS = [
+    "What internet packages are available?",
+    "Tell me about Flash Fiber.",
+    "What are the PTCL voice and mobile packages?",
+    "انٹرنیٹ کے کون کون سے پیکیجز ہیں؟",
+    "Shoq TV ke baray mein bataen",
+    "Speed Bolt-On kya hai?",
+]
 
-        with st.chat_message("user"):
-            st.markdown(active_query)
 
-        with st.chat_message("assistant"):
+def render_welcome():
+    st.markdown(
+        """
+        <div class="welcome">
+            <div class="welcome-greet">السلام علیکم · Hello · Assalam o Alaikum</div>
+            <div class="welcome-text">
+                Pick a question below, type your own, or tap the microphone.
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    col_left, col_right = st.columns(2)
+    for position, suggestion in enumerate(SUGGESTIONS):
+        column = col_left if position % 2 == 0 else col_right
+        with column:
+            if st.button(suggestion, use_container_width=True, key=f"suggestion_{position}"):
+                st.session_state.pending_query = suggestion
+                st.rerun()
+
+
+def render_message(message):
+    avatar = "📡" if message["role"] == "assistant" else "🙋"
+    with st.chat_message(message["role"], avatar=avatar):
+        render_text(message["content"])
+        if message["role"] == "user" and message.get("voice"):
+            st.caption("🎙️ Voice message")
+        if message["role"] == "assistant":
+            render_audio(message.get("audio"))
+
+
+# =========================================================
+# CHAT
+# =========================================================
+
+with chat_area:
+    if not st.session_state.messages and not active_query:
+        render_welcome()
+
+    for message in st.session_state.messages:
+        render_message(message)
+
+    if active_query:
+        history = list(st.session_state.messages)[-6:]
+        user_message = {"role": "user", "content": active_query, "voice": from_voice}
+        st.session_state.messages.append(user_message)
+        render_message(user_message)
+
+        with st.chat_message("assistant", avatar="📡"):
             if not kb_ready:
-                st.error("The PTCL knowledge base is not ready. Please build the knowledge base first.")
+                error_text = "The assistant is not ready yet. Please build the knowledge base first."
+                st.error(error_text)
+                st.session_state.messages.append({"role": "assistant", "content": error_text, "audio": None})
             else:
                 try:
-                    with st.spinner("Searching PTCL knowledge base..."):
-                        knowledge_base = initialize_knowledge_base()
-                        retrieved_results = retrieve_relevant_chunks(
-                            query=active_query,
-                            knowledge_base=knowledge_base,
+                    with st.spinner("Thinking..."):
+                        understanding = understand_query(active_query, history)
+                        language = understanding["language"]
+
+                        if understanding["intent"] in ("greeting", "thanks"):
+                            answer = generate_smalltalk(active_query, language)
+                        else:
+                            knowledge_base = initialize_knowledge_base()
+                            retrieved_results = retrieve_relevant_chunks(
+                                query=understanding["english_query"],
+                                knowledge_base=knowledge_base,
+                            )
+                            if not retrieved_results and understanding["english_query"] != active_query:
+                                retrieved_results = retrieve_relevant_chunks(
+                                    query=active_query,
+                                    knowledge_base=knowledge_base,
+                                )
+                            answer = generate_grounded_answer(
+                                query=active_query,
+                                language=language,
+                                retrieved_results=retrieved_results,
+                                history=history,
+                            )
+
+                        want_audio = from_voice or st.session_state.get("tts_enabled", True)
+                        audio_bytes = (
+                            generate_tts_audio(answer, language)
+                            if want_audio and answer and answer != GENERIC_ERROR
+                            else None
                         )
-                        answer = generate_grounded_answer(
-                            query=active_query,
-                            retrieved_results=retrieved_results,
-                        )
-                        audio_bytes = generate_tts_audio(answer)
-                        sources_list = [
-                            {
-                                "source_file": format_source_name(res["metadata"].get("source_file", "PTCL Knowledge Base")),
-                                "page_number": res["metadata"].get("page_number", "N/A"),
-                                "similarity": res["similarity"],
-                            }
-                            for res in retrieved_results
-                        ]
 
-                    st.markdown(answer)
-
-                    if audio_bytes:
-                        st.audio(audio_bytes, format="audio/mp3")
-
-                    if sources_list:
-                        with st.expander("Sources", expanded=False):
-                            for source in sources_list:
-                                st.markdown(f"**Document:** {source['source_file']}")
-                                st.markdown(f"**Page:** {source['page_number']}")
-                                st.markdown(f"**Similarity:** {source['similarity']:.4f}")
-                                st.divider()
+                    render_text(answer)
+                    render_audio(audio_bytes, autoplay=from_voice)
 
                     st.session_state.messages.append(
-                        {
-                            "role": "assistant",
-                            "content": answer,
-                            "audio": audio_bytes,
-                            "sources": sources_list,
-                        }
+                        {"role": "assistant", "content": answer, "audio": audio_bytes}
                     )
                 except Exception:
-                    err_msg = "Sorry, I couldn't process that request right now. Please try again."
-                    st.error(err_msg)
+                    st.error(GENERIC_ERROR)
                     st.session_state.messages.append(
-                        {
-                            "role": "assistant",
-                            "content": err_msg,
-                            "audio": None,
-                            "sources": [],
-                        }
+                        {"role": "assistant", "content": GENERIC_ERROR, "audio": None}
                     )
+
+
+# =========================================================
+# FOOTER
+# =========================================================
+
+st.markdown(
+    """
+    <div class="app-footer">
+        <div>© 2026 <b>PTCL Assistant</b> · Designed &amp; developed by <b>Areeba Imran</b>. All rights reserved.</div>
+        <div class="note">Answers are based on the PTCL package information available to this assistant.
+        For the latest offers and official confirmation, please contact PTCL directly.</div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
