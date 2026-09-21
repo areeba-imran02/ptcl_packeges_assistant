@@ -102,25 +102,6 @@ st.markdown(
             box-shadow: 0 8px 32px rgba(7, 21, 47, 0.4);
         }
 
-        .suggestion-btn {
-            background-color: #102A56;
-            border: 1px solid #6C4DFF;
-            color: #F8FAFF;
-            border-radius: 10px;
-            padding: 0.6rem 1rem;
-            font-size: 0.9rem;
-            transition: all 0.2s ease;
-            cursor: pointer;
-            text-align: left;
-            margin-bottom: 0.5rem;
-        }
-
-        .suggestion-btn:hover {
-            background-color: #6C4DFF;
-            color: #F8FAFF;
-            border-shadow: 0 0 12px rgba(108, 77, 255, 0.5);
-        }
-
         div[data-testid="stChatMessage"] {
             border-radius: 12px;
             padding: 1rem;
@@ -164,7 +145,7 @@ st.markdown(
 
 
 # =========================================================
-# WHISPER SPEECH-TO-TEXT
+# WHISPER SPEECH-TO-TEXT & VALIDATION
 # =========================================================
 
 WHISPER_MODEL_SIZE = "small"
@@ -230,6 +211,23 @@ def transcribe_audio(audio_bytes):
                 pass
 
 
+def is_valid_transcript(text):
+    """
+    Validate whether the transcribed text contains meaningful words
+    or is just Whisper hallucinated noise/symbols.
+    """
+    if not text:
+        return False
+    clean = text.strip()
+    if len(clean) < 2:
+        return False
+    # Check for excessive unprintable/non-standard unicode characters or garbage blocks
+    garbage_chars = sum(1 for c in clean if ord(c) > 1000 and not ('\u0600' <= c <= '\u06FF'))
+    if garbage_chars > 3 or len(re.findall(r'[^\w\s]', clean)) > len(clean) * 0.4:
+        return False
+    return True
+
+
 # =========================================================
 # LANGUAGE DETECTION & UTILITIES
 # =========================================================
@@ -242,16 +240,14 @@ def detect_query_language(text):
     if not text:
         return "en"
 
-    # Check for Urdu script characters
     urdu_chars = sum(1 for char in text if "\u0600" <= char <= "\u06FF")
     if urdu_chars >= 2:
         return "ur"
 
-    # Check for Roman Urdu patterns / keywords
     roman_urdu_keywords = [
         "kon", "kya", "hain", "hai", "kese", "batao", "mujhe", 
         "packages", "wala", "aur", "ki", "ka", "ke", "mein", 
-        "se", "karnay", "konsa", "konsay", "bataen", "hain"
+        "se", "karnay", "konsa", "konsay", "bataen"
     ]
     lower_text = text.lower()
     words = lower_text.split()
@@ -270,11 +266,8 @@ def clean_text_for_tts(text):
     """
     if not text:
         return ""
-    # Remove markdown headers, bold, italics, lists
     cleaned = re.sub(r'[\#\*\_\-\`\~\[\]\(\)]', ' ', text)
-    # Remove URLs
     cleaned = re.sub(r'http\S+', '', cleaned)
-    # Condense multiple whitespaces
     cleaned = re.sub(r'\s+', ' ', cleaned).strip()
     return cleaned
 
@@ -517,7 +510,7 @@ def generate_grounded_answer(query: str, retrieved_results: list):
 
     if not retrieved_results:
         if query_lang == "ur":
-            return "مجھے موجودہ PTCL معلومات میں اس سوال کی مخصوص تفصیل نہیں ملی۔ آپ PTCL انٹرنیٹ پیکیجز، Flash Fiber، Voice/Mobile Packages، Shoq TV، Speed Bolt-On، Quad Play یا Advance Packages کے بارے میں پوچھ سکتے ہیں۔"
+            return "मुझे موجودہ PTCL معلومات میں اس سوال کی مخصوص تفصیل نہیں ملی۔ آپ PTCL انٹرنیٹ پیکیجز، Flash Fiber، Voice/Mobile Packages، Shoq TV، Speed Bolt-On، Quad Play یا Advance Packages کے بارے میں پوچھ سکتے ہیں۔"
         elif query_lang == "roman_ur":
             return "Mujhe mojooda PTCL knowledge base mein is sawal ki tafseel nahi mili. Aap PTCL internet packages, Flash Fiber, voice/mobile packages, Shoq TV, Speed Bolt-On, Quad Play ya advance packages ke baray mein pooch sakte hain."
         return "I couldn't find that specific information in my current PTCL knowledge base. Please try asking about PTCL internet packages, Flash Fiber, voice/mobile packages, Shoq TV, Speed Bolt-On, Quad Play, or advance packages."
@@ -821,9 +814,6 @@ def generate_tts_audio(text):
 # =========================================================
 
 with main_column:
-    # --------------------------------------------------------
-    # Welcome Screen if no chat history
-    # --------------------------------------------------------
     if not st.session_state.messages:
         st.markdown(
             """
@@ -855,9 +845,6 @@ with main_column:
         if suggested_clicked:
             st.session_state.last_query = suggested_clicked
 
-    # --------------------------------------------------------
-    # Display existing conversation
-    # --------------------------------------------------------
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
@@ -871,9 +858,6 @@ with main_column:
                         st.markdown(f"**Similarity:** {source.get('similarity', 0.0):.4f}")
                         st.divider()
 
-    # --------------------------------------------------------
-    # Input Area
-    # --------------------------------------------------------
     query = st.chat_input("Ask about PTCL packages, internet, voice, minutes, SMS, validity...")
     voice_audio = render_voice_input()
     voice_query = None
@@ -881,14 +865,17 @@ with main_column:
     if voice_audio:
         with st.spinner("Transcribing your voice..."):
             try:
-                voice_query = transcribe_audio(voice_audio)
+                raw_voice_query = transcribe_audio(voice_audio)
+                if is_valid_transcript(raw_voice_query):
+                    voice_query = raw_voice_query
+                else:
+                    st.warning("Voice recording saaf nahi thi ya noise zyada thi. Barah-e-karam mic par saaf bol kar dobara record karein.")
             except Exception:
                 st.error("Voice transcription failed. Please try recording again.")
 
         if voice_query:
             st.info(f"Voice transcript: {voice_query}")
 
-    # Determine active query from suggestion, voice input, or chat input
     active_query = st.session_state.pop("last_query", None)
     if voice_query:
         active_query = voice_query
