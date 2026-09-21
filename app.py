@@ -40,7 +40,7 @@ EMBEDDING_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
 st.set_page_config(
     page_title="PTCL Assistant",
     page_icon="📡",
-    layout="centered",
+    layout="wide",
     initial_sidebar_state="expanded",
 )
 
@@ -85,36 +85,12 @@ st.markdown(
 
         header[data-testid="stHeader"] { background: transparent; }
 
-        /* ---------- Glowing frame on all 4 sides ---------- */
-        .stApp::before {
-            content: "";
-            position: fixed; inset: 8px;
-            border-radius: 24px; padding: 2px;
-            background: linear-gradient(135deg, #2DD4BF, #3B82F6, #8B5CF6, #2DD4BF);
-            -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-            -webkit-mask-composite: xor;
-            mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
-            pointer-events: none; z-index: 999999;
-        }
-        .stApp::after {
-            content: "";
-            position: fixed; inset: 8px;
-            border-radius: 24px;
-            box-shadow:
-                0 0 16px rgba(45, 212, 191, 0.50),
-                0 0 44px rgba(59, 130, 246, 0.32),
-                inset 0 0 32px rgba(45, 212, 191, 0.13);
-            pointer-events: none; z-index: 999998;
-            animation: frameGlow 4.5s ease-in-out infinite;
-        }
-        @keyframes frameGlow { 0%, 100% { opacity: 0.65; } 50% { opacity: 1; } }
-        @media (prefers-reduced-motion: reduce) { .stApp::after { animation: none; } }
         #MainMenu, footer { visibility: hidden; }
 
-        .block-container {
-            max-width: 900px;
+        .block-container, [data-testid="stMainBlockContainer"] {
+            max-width: 1280px;
             padding-top: 1.2rem;
-            padding-bottom: 8rem;
+            padding-bottom: 2rem;
         }
 
         [data-testid="stMarkdownContainer"],
@@ -253,12 +229,6 @@ st.markdown(
         .stButton > button:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
 
         /* ---------- Chat input ---------- */
-        [data-testid="stBottom"] {
-            background: linear-gradient(to top, #04101F 62%, rgba(4, 16, 31, 0)) !important;
-            padding-top: 1.5rem;
-        }
-        [data-testid="stBottom"] > div { background: transparent !important; }
-
         [data-testid="stChatInput"] {
             border-radius: 16px;
             background: #0A2140 !important;
@@ -291,15 +261,55 @@ st.markdown(
             -webkit-text-fill-color: #04101F;
         }
 
-        /* ---------- Voice ---------- */
-        .voice-card {
-            margin-top: 1.2rem; padding: 0.9rem 1.2rem 0.6rem 1.2rem;
-            border-radius: 16px 16px 0 0;
-            background: rgba(45, 212, 191, 0.07);
-            border: 1px solid rgba(45, 212, 191, 0.28); border-bottom: none;
+        /* ---------- Chatbot panel: glowing border on its 4 sides ---------- */
+        .st-key-chat_panel {
+            border: 2px solid rgba(45, 212, 191, 0.75) !important;
+            border-radius: 24px !important;
+            background: rgba(4, 16, 31, 0.50);
+            box-shadow:
+                0 0 16px rgba(45, 212, 191, 0.50),
+                0 0 44px rgba(59, 130, 246, 0.32),
+                inset 0 0 30px rgba(45, 212, 191, 0.10);
+            animation: panelGlow 4.5s ease-in-out infinite;
         }
-        .voice-title { font-weight: 600; color: #7FF0DF; }
-        .voice-sub { font-size: 0.85rem; color: var(--mist); }
+        @keyframes panelGlow {
+            0%, 100% {
+                box-shadow: 0 0 12px rgba(45, 212, 191, 0.35), 0 0 34px rgba(59, 130, 246, 0.22),
+                            inset 0 0 24px rgba(45, 212, 191, 0.08);
+            }
+            50% {
+                box-shadow: 0 0 20px rgba(45, 212, 191, 0.65), 0 0 56px rgba(59, 130, 246, 0.40),
+                            inset 0 0 34px rgba(45, 212, 191, 0.14);
+            }
+        }
+        @media (prefers-reduced-motion: reduce) { .st-key-chat_panel { animation: none; } }
+
+        .composer-note {
+            font-size: 0.85rem; color: var(--mist);
+            margin: 0.5rem 0 0.4rem 0; padding-top: 0.7rem;
+            border-top: 1px solid var(--line);
+        }
+
+        /* ---------- Suggested-questions dropdown (light shade, always visible) ---------- */
+        .st-key-sq_dropdown [data-testid="stExpander"],
+        [data-testid="stMain"] [data-testid="stExpander"] {
+            background: linear-gradient(160deg, #F8FCFF 0%, #E3F1FF 100%) !important;
+            border: 1.5px solid rgba(45, 212, 191, 0.75) !important;
+            border-radius: 18px !important;
+            box-shadow: 0 8px 26px rgba(45, 212, 191, 0.20);
+        }
+        .st-key-sq_dropdown [data-testid="stExpander"] details,
+        [data-testid="stMain"] [data-testid="stExpander"] details {
+            background: transparent !important;
+            border: none !important;
+        }
+        .st-key-sq_dropdown [data-testid="stExpander"] summary,
+        .st-key-sq_dropdown [data-testid="stExpander"] summary *,
+        [data-testid="stMain"] [data-testid="stExpander"] summary,
+        [data-testid="stMain"] [data-testid="stExpander"] summary * {
+            color: #0B1F3A !important;
+            font-weight: 600;
+        }
 
         audio { width: 100%; border-radius: 12px; margin-top: 0.4rem; }
 
@@ -1088,35 +1098,47 @@ SUGGESTIONS = [
     "Package ki validity kitni hoti hai?",
     "فلیش فائبر کے بارے میں بتائیں",
     "مجھے وائس پیکیجز کی تفصیل بتائیں",
+    # ---- 10 new questions ----
+    "Which internet package is best for home use?",
+    "What is the difference between Flash Fiber and Speed Bolt-On?",
+    "Quad Play mein kya kya milta hai?",
+    "Shoq TV mein kitne channels milte hain?",
+    "Internet package ki monthly price kitni hai?",
+    "How can I upgrade my internet package?",
+    "PTCL to PTCL free calling hai kya?",
+    "Advance package ki validity aur price bataen",
+    "کم قیمت انٹرنیٹ پیکیج کون سا ہے؟",
+    "کواڈ پلے میں کیا کیا ملتا ہے؟",
 ]
 
-# (start, end) gradient colours - all dark enough for white text.
+# (background, hover background, accent stripe) - light shades, text stays dark.
 SUGGESTION_COLORS = [
-    ("#0F766E", "#115E59"),  # teal
-    ("#1D4ED8", "#1E3A8A"),  # blue
-    ("#7C3AED", "#5B21B6"),  # violet
-    ("#BE185D", "#9D174D"),  # pink
-    ("#C2410C", "#9A3412"),  # orange
-    ("#15803D", "#166534"),  # green
-    ("#0E7490", "#155E75"),  # cyan
-    ("#A21CAF", "#86198F"),  # fuchsia
+    ("#CCFBF1", "#99F6E4", "#0D9488"),  # teal
+    ("#DBEAFE", "#BFDBFE", "#2563EB"),  # blue
+    ("#EDE9FE", "#DDD6FE", "#7C3AED"),  # violet
+    ("#FCE7F3", "#FBCFE8", "#DB2777"),  # pink
+    ("#FFEDD5", "#FED7AA", "#EA580C"),  # orange
+    ("#DCFCE7", "#BBF7D0", "#16A34A"),  # green
+    ("#CFFAFE", "#A5F3FC", "#0891B2"),  # cyan
+    ("#FEF9C3", "#FEF08A", "#CA8A04"),  # yellow
 ]
 
 
 def build_suggestion_css():
     rules = []
     for i in range(len(SUGGESTIONS)):
-        c1, c2 = SUGGESTION_COLORS[i % len(SUGGESTION_COLORS)]
+        bg, hover, accent = SUGGESTION_COLORS[i % len(SUGGESTION_COLORS)]
         rules.append(
             f".st-key-sq_{i} button {{"
-            f" background: linear-gradient(135deg, {c1}, {c2}) !important;"
-            f" border: 1px solid rgba(255, 255, 255, 0.28) !important;"
-            f" color: #FFFFFF !important; height: auto; min-height: 2.6rem;"
+            f" background: {bg} !important;"
+            f" border: 1px solid {hover} !important;"
+            f" border-left: 6px solid {accent} !important;"
+            f" color: #0B1F3A !important; height: auto; min-height: 2.6rem;"
             f" white-space: normal; justify-content: flex-start; }}"
-            f" .st-key-sq_{i} button p {{ color: #FFFFFF !important; text-align: left;"
+            f" .st-key-sq_{i} button p {{ color: #0B1F3A !important; text-align: left;"
             f" font-weight: 500; unicode-bidi: plaintext; }}"
-            f" .st-key-sq_{i} button:hover {{ filter: brightness(1.15);"
-            f" border-color: #FFFFFF !important; }}"
+            f" .st-key-sq_{i} button:hover {{ background: {hover} !important;"
+            f" border-color: {accent} !important; }}"
         )
     return "<style>" + "\n".join(rules) + "</style>"
 
@@ -1125,7 +1147,6 @@ st.markdown(build_suggestion_css(), unsafe_allow_html=True)
 
 required_files = [CHUNKS_FILE, METADATA_FILE, MANIFEST_FILE, FAISS_FILE]
 kb_ready = all(file.exists() for file in required_files)
-kb_status = get_knowledge_base_status()["status"]
 
 with st.sidebar:
     st.markdown(
@@ -1140,12 +1161,6 @@ with st.sidebar:
         """,
         unsafe_allow_html=True,
     )
-
-    with st.expander("💡 Suggested questions", expanded=False):
-        for position, suggestion in enumerate(SUGGESTIONS):
-            if st.button(suggestion, use_container_width=True, key=f"sq_{position}"):
-                st.session_state.pending_query = suggestion
-                st.rerun()
 
     st.markdown('<div class="side-title">Topics you can ask about</div>', unsafe_allow_html=True)
     st.markdown(
@@ -1162,19 +1177,6 @@ with st.sidebar:
         """,
         unsafe_allow_html=True,
     )
-
-    st.markdown('<div class="side-title">Voice replies</div>', unsafe_allow_html=True)
-    st.toggle("Read answers aloud", value=True, key="tts_enabled")
-
-    st.markdown('<div class="side-title">Status</div>', unsafe_allow_html=True)
-    if kb_ready and kb_status == "unchanged":
-        st.markdown('<span class="status-chip status-ok"><span class="dot"></span>Assistant ready</span>', unsafe_allow_html=True)
-    elif kb_ready and kb_status in ("changed", "missing_saved_manifest"):
-        st.markdown('<span class="status-chip status-warn"><span class="dot"></span>Update available</span>', unsafe_allow_html=True)
-    elif kb_ready:
-        st.markdown('<span class="status-chip status-warn"><span class="dot"></span>Ready (unverified)</span>', unsafe_allow_html=True)
-    else:
-        st.markdown('<span class="status-chip status-bad"><span class="dot"></span>Setup incomplete</span>', unsafe_allow_html=True)
 
     st.write("")
     if st.button("Clear conversation", use_container_width=True):
@@ -1223,33 +1225,76 @@ st.markdown(
 
 
 # =========================================================
-# LAYOUT: chat on top, voice below, input pinned at the bottom
+# LAYOUT: [ chatbot panel (chat + type + mic) | suggestions on the right ]
 # =========================================================
 
-chat_area = st.container()
-voice_area = st.container()
-text_query = st.chat_input("Ask about PTCL packages — English, اردو or Roman Urdu")
+def keyed_container(key, **kwargs):
+    """st.container with a CSS-hook key (falls back on older Streamlit)."""
+    try:
+        return st.container(key=key, **kwargs)
+    except TypeError:
+        return st.container(**kwargs)
+
+
+def scroll_container(height):
+    try:
+        return st.container(height=height, border=False)
+    except TypeError:
+        return st.container()
+
+
+def render_message(message):
+    avatar = "📡" if message["role"] == "assistant" else "🙋"
+    with st.chat_message(message["role"], avatar=avatar):
+        render_text(message["content"])
+        if message["role"] == "user" and message.get("voice"):
+            st.caption("🎙️ Voice message")
+        if message["role"] == "assistant":
+            render_audio(message.get("audio"))
+
 
 pending_query = st.session_state.pop("pending_query", None)
 
+chat_col, side_col = st.columns([3.1, 1.25], gap="large")
+
+# ---- right side: light dropdown, always open, one tap = direct answer ----
+with side_col:
+    with keyed_container("sq_dropdown"):
+        with st.expander("💡 Suggested questions", expanded=True):
+            with scroll_container(540):
+                for position, suggestion in enumerate(SUGGESTIONS):
+                    if st.button(suggestion, use_container_width=True, key=f"sq_{position}"):
+                        st.session_state.pending_query = suggestion
+                        st.rerun()
+
+# ---- left side: the chatbot panel with the glowing border ----
+with chat_col:
+    with keyed_container("chat_panel", border=True):
+        chat_area = st.container()
+        composer = st.container()
+
 voice_query = None
-with voice_area:
+with composer:
     st.markdown(
-        """
-        <div class="voice-card">
-            <div class="voice-title">🎙️ Talk to the assistant</div>
-            <div class="voice-sub">Speak in any language. The assistant replies in the same language, in text and voice.</div>
-        </div>
-        """,
+        '<div class="composer-note">Type or speak in any language — replies come in the same language.</div>',
         unsafe_allow_html=True,
     )
-    recording = mic_recorder(
-        start_prompt="🎙️ Start recording",
-        stop_prompt="⏹️ Stop & send",
-        just_once=True,
-        use_container_width=True,
-        key="ptcl_voice_recorder",
-    )
+    try:
+        type_col, mic_col = st.columns([3.6, 1.4], vertical_alignment="center")
+    except TypeError:
+        type_col, mic_col = st.columns([3.6, 1.4])
+
+    with type_col:
+        text_query = st.chat_input("Ask about PTCL packages — English, اردو or Roman Urdu")
+
+    with mic_col:
+        recording = mic_recorder(
+            start_prompt="🎙️ Speak",
+            stop_prompt="⏹️ Stop & send",
+            just_once=True,
+            use_container_width=True,
+            key="ptcl_voice_recorder",
+        )
     voice_audio = recording.get("bytes") if recording else None
 
     if voice_audio:
@@ -1274,16 +1319,6 @@ elif text_query and text_query.strip():
     active_query = text_query.strip()
 elif pending_query and pending_query.strip():
     active_query = pending_query.strip()
-
-
-def render_message(message):
-    avatar = "📡" if message["role"] == "assistant" else "🙋"
-    with st.chat_message(message["role"], avatar=avatar):
-        render_text(message["content"])
-        if message["role"] == "user" and message.get("voice"):
-            st.caption("🎙️ Voice message")
-        if message["role"] == "assistant":
-            render_audio(message.get("audio"))
 
 
 # =========================================================
@@ -1331,10 +1366,9 @@ with chat_area:
                                 history=history,
                             )
 
-                        want_audio = from_voice or st.session_state.get("tts_enabled", True)
                         audio_bytes = (
                             generate_tts_audio(answer, language)
-                            if want_audio and answer and answer != GENERIC_ERROR
+                            if answer and answer != GENERIC_ERROR
                             else None
                         )
 
@@ -1352,7 +1386,7 @@ with chat_area:
 
 
 # =========================================================
-# FOOTER
+# FOOTER (very end of the page)
 # =========================================================
 
 st.markdown(
