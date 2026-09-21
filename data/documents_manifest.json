@@ -1,0 +1,57 @@
+{
+  "generated_at_utc": "2026-09-21T19:21:33.846722+00:00",
+  "document_count": 7,
+  "chunk_count": 7,
+  "embedding_model": "sentence-transformers/all-MiniLM-L6-v2",
+  "documents": [
+    {
+      "filename": "1_ShoqTV_DigitalSignup.pdf",
+      "relative_path": "1_ShoqTV_DigitalSignup.pdf",
+      "file_size": 2363,
+      "modified_timestamp": 1789999341.0,
+      "sha256": "43c61579cee315000db869637d4fb9f072dd4587efc29d66c94a8190b0fc1ab3"
+    },
+    {
+      "filename": "2_Internet_Packages.pdf",
+      "relative_path": "2_Internet_Packages.pdf",
+      "file_size": 2202,
+      "modified_timestamp": 1789999342.0,
+      "sha256": "55c8c46e0a4db09d260b67d24b91d330093e733637f56242cf21475c98b7b12a"
+    },
+    {
+      "filename": "3_ShoqTV_Voice_Mobile_Packages.pdf",
+      "relative_path": "3_ShoqTV_Voice_Mobile_Packages.pdf",
+      "file_size": 2524,
+      "modified_timestamp": 1789999342.0,
+      "sha256": "21028a8dfeb2f9e8488c8503f22fc65dafbb81184e79935e640e60ec6eee3741"
+    },
+    {
+      "filename": "4_3Months_Advance_Package.pdf",
+      "relative_path": "4_3Months_Advance_Package.pdf",
+      "file_size": 2539,
+      "modified_timestamp": 1789999342.0,
+      "sha256": "5d92edd599a09d55995996979234928b863724944e9e2ba2b3e5bbbd042fa63b"
+    },
+    {
+      "filename": "5_QuadPlay_Packages.pdf",
+      "relative_path": "5_QuadPlay_Packages.pdf",
+      "file_size": 2488,
+      "modified_timestamp": 1789999342.0,
+      "sha256": "9c5d042a549ba52c2de2f2e07480d5e777a7db2d5e985b62477096ebef425895"
+    },
+    {
+      "filename": "6_SpeedBoltOn_Voice_Mobile.pdf",
+      "relative_path": "6_SpeedBoltOn_Voice_Mobile.pdf",
+      "file_size": 2882,
+      "modified_timestamp": 1789999342.0,
+      "sha256": "23baa87158dec64a05346b9d1fc6a36cba101ba2ee0fac59e23a3d610645bfaa"
+    },
+    {
+      "filename": "7_PTCL_FlashFiber.pdf",
+      "relative_path": "7_PTCL_FlashFiber.pdf",
+      "file_size": 1797,
+      "modified_timestamp": 1789999342.0,
+      "sha256": "eb30d46b965776f92be19fab76d53ae2b8f2345a2cb5c5dae0b3272c97b1e6b6"
+    }
+  ]
+}
