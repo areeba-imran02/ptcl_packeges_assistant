@@ -1,414 +1,198 @@
-
 from __future__ import annotations
 
-import hashlib
-import json
+import os
 import pickle
-import re
-from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List
-
 import faiss
 import numpy as np
-import pymupdf
-from docx import Document
+import streamlit as st
+from faster_whisper import WhisperModel
 from sentence_transformers import SentenceTransformer
-
+from groq import Groq
 
 # ============================================================
-# Configuration
+# Page Configuration
 # ============================================================
+st.set_page_config(
+    page_title="PTCL Packages Assistant",
+    page_icon="🤖",
+    layout="centered"
+)
 
-PROJECT_DIR = Path(__file__).resolve().parent.parent
-
-KNOWLEDGE_BASE_DIR = PROJECT_DIR / "knowledge_base"
+# ============================================================
+# Paths Configuration
+# ============================================================
+PROJECT_DIR = Path(__file__).resolve().parent
 DATA_DIR = PROJECT_DIR / "data"
 FAISS_DIR = PROJECT_DIR / "faiss_index"
 
 CHUNKS_PATH = DATA_DIR / "chunks.pkl"
 METADATA_PATH = DATA_DIR / "metadata.pkl"
-MANIFEST_PATH = DATA_DIR / "documents_manifest.json"
 FAISS_INDEX_PATH = FAISS_DIR / "index.faiss"
 
 EMBEDDING_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
 
-# Approximate word-based chunking.
-CHUNK_SIZE_WORDS = 650
-CHUNK_OVERLAP_WORDS = 100
-
-SUPPORTED_EXTENSIONS = {".pdf", ".txt", ".docx"}
-
-
 # ============================================================
-# Directory Setup
+# Load Models & Data (Cached for Performance)
 # ============================================================
+@st.cache_resource
+def load_resources():
+    # Load Embedding Model
+    embed_model = SentenceTransformer(EMBEDDING_MODEL_NAME)
+    
+    # Load FAISS Index
+    if FAISS_INDEX_PATH.exists():
+        index = faiss.read_index(str(FAISS_INDEX_PATH))
+    else:
+        index = None
 
-def ensure_directories() -> None:
-    KNOWLEDGE_BASE_DIR.mkdir(parents=True, exist_ok=True)
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    FAISS_DIR.mkdir(parents=True, exist_ok=True)
-
-
-# ============================================================
-# Text Cleaning
-# ============================================================
-
-def clean_text(text: str) -> str:
-    if not text:
-        return ""
-
-    text = text.replace("\x00", " ")
-    text = text.replace("\r\n", "\n")
-    text = text.replace("\r", "\n")
-
-    # Remove excessive horizontal whitespace while preserving lines.
-    text = re.sub(r"[ \t]+", " ", text)
-
-    # Remove excessive blank lines.
-    text = re.sub(r"\n{3,}", "\n\n", text)
-
-    return text.strip()
-
-
-# ============================================================
-# PDF Extraction
-# ============================================================
-
-def extract_pdf(path: Path) -> List[Dict]:
-    pages = []
-
-    try:
-        document = pymupdf.open(path)
-
-        try:
-            for page_number, page in enumerate(document, start=1):
-                text = clean_text(page.get_text("text"))
-
-                if text:
-                    pages.append(
-                        {
-                            "text": text,
-                            "page_number": page_number,
-                            "document_title": path.stem,
-                        }
-                    )
-        finally:
-            document.close()
-
-    except Exception as exc:
-        print(f"⚠️ Skipping corrupted/unreadable PDF: {path.name}")
-        print(f"   Reason: {exc}")
-
-    return pages
-
-
-# ============================================================
-# TXT Extraction
-# ============================================================
-
-def extract_txt(path: Path) -> List[Dict]:
-    try:
-        text = path.read_text(encoding="utf-8", errors="replace")
-        text = clean_text(text)
-
-        if text:
-            return [
-                {
-                    "text": text,
-                    "page_number": None,
-                    "document_title": path.stem,
-                }
-            ]
-
-    except Exception as exc:
-        print(f"⚠️ Could not read TXT file: {path.name}")
-        print(f"   Reason: {exc}")
-
-    return []
-
-
-# ============================================================
-# DOCX Extraction
-# ============================================================
-
-def extract_docx(path: Path) -> List[Dict]:
-    try:
-        document = Document(path)
-
-        paragraphs = []
-
-        for paragraph in document.paragraphs:
-            text = clean_text(paragraph.text)
-            if text:
-                paragraphs.append(text)
-
-        # Preserve table content in a readable text representation.
-        for table in document.tables:
-            for row in table.rows:
-                cells = [
-                    clean_text(cell.text)
-                    for cell in row.cells
-                ]
-
-                row_text = " | ".join(
-                    cell for cell in cells if cell
-                )
-
-                if row_text:
-                    paragraphs.append(row_text)
-
-        text = clean_text("\n".join(paragraphs))
-
-        if text:
-            return [
-                {
-                    "text": text,
-                    "page_number": None,
-                    "document_title": path.stem,
-                }
-            ]
-
-    except Exception as exc:
-        print(f"⚠️ Could not read DOCX file: {path.name}")
-        print(f"   Reason: {exc}")
-
-    return []
-
-
-# ============================================================
-# Generic Document Extraction
-# ============================================================
-
-def extract_document(path: Path) -> List[Dict]:
-    extension = path.suffix.lower()
-
-    if extension == ".pdf":
-        return extract_pdf(path)
-
-    if extension == ".txt":
-        return extract_txt(path)
-
-    if extension == ".docx":
-        return extract_docx(path)
-
-    return []
-
-
-# ============================================================
-# Chunking
-# ============================================================
-
-def chunk_words(
-    text: str,
-    chunk_size: int = CHUNK_SIZE_WORDS,
-    overlap: int = CHUNK_OVERLAP_WORDS,
-) -> List[str]:
-
-    words = text.split()
-
-    if not words:
-        return []
-
-    if overlap >= chunk_size:
-        raise ValueError("Chunk overlap must be smaller than chunk size.")
-
+    # Load Chunks and Metadata
     chunks = []
-    start = 0
+    metadata = []
+    if CHUNKS_PATH.exists():
+        with CHUNKS_PATH.open("rb") as f:
+            chunks = pickle.load(f)
+            
+    if METADATA_PATH.exists():
+        with METADATA_PATH.open("rb") as f:
+            metadata = pickle.load(f)
+            
+    return embed_model, index, chunks, metadata
 
-    while start < len(words):
-        end = min(start + chunk_size, len(words))
+@st.cache_resource
+def load_whisper_model():
+    # Using 'small' or 'base' for robust multi-language transcription
+    return WhisperModel("small", device="cpu", compute_type="int8")
 
-        chunk = " ".join(words[start:end]).strip()
+embed_model, faiss_index, chunks, metadata = load_resources()
+whisper_model = load_whisper_model()
 
-        if chunk:
-            chunks.append(chunk)
-
-        if end >= len(words):
-            break
-
-        start = end - overlap
-
-    return chunks
-
+# Initialize Groq Client (Make sure GROQ_API_KEY is in your environment variables or Streamlit secrets)
+groq_client = Groq(api_key=os.environ.get("GROQ_API_KEY", st.secrets.get("GROQ_API_KEY", "")))
 
 # ============================================================
-# File Manifest
+# Helper Functions
 # ============================================================
+def search_knowledge_base(query: str, top_k: int = 3):
+    if not faiss_index or not chunks:
+        return []
+    
+    query_vector = embed_model.encode(
+        [query], 
+        convert_to_numpy=True, 
+        normalize_embeddings=True
+    )
+    query_vector = np.asarray(query_vector, dtype=np.float32)
+    
+    distances, indices = faiss_index.search(query_vector, top_k)
+    
+    results = []
+    for idx, score in zip(indices[0], distances[0]):
+        if idx != -1 and idx < len(chunks):
+            results.append({
+                "chunk": chunks[idx],
+                "metadata": metadata[idx],
+                "score": float(score)
+            })
+    return results
 
-def sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
+def generate_response(user_query: str, retrieved_context: list):
+    context_text = "\n\n".join([item["chunk"] for item in retrieved_context])
+    
+    system_prompt = """
+Aap ek madadgar PTCL Packages Assistant hain. 
+Aapka kaam sirf di gayi knowledge base (context) ke mutabiq PTCL ke internet, Flash Fiber, landline, aur packages ke baray mein sawalon ke jawab dena hai.
 
-    with path.open("rb") as file:
-        for block in iter(lambda: file.read(1024 * 1024), b""):
-            digest.update(block)
+Instructions:
+1. User jis zaban (English, Roman Urdu, ya Urdu script) mein sawal pooche, usay achhi tarah samajh kar usi lehje ya Roman Urdu mein jawab dein.
+2. Agar sawal ka jawab knowledge base mein mojood na ho, to polite tareeqay se batayen ke yeh maloomat dastiyab nahi hain aur milte-julte packages ki list dein.
+3. Kisi bhi ghair-mutaliqa (irrelevant) ya galat mishear ki gayi term ka jawab na dein balkay user ko guide karein.
+"""
 
-    return digest.hexdigest()
+    user_prompt = f"""
+Context from Knowledge Base:
+{context_text}
 
+User Query:
+{user_query}
+"""
 
-def build_manifest(files: List[Path]) -> List[Dict]:
-    manifest = []
-
-    for path in files:
-        stat = path.stat()
-
-        manifest.append(
-            {
-                "filename": path.name,
-                "relative_path": str(
-                    path.relative_to(KNOWLEDGE_BASE_DIR)
-                ),
-                "file_size": stat.st_size,
-                "modified_timestamp": stat.st_mtime,
-                "sha256": sha256_file(path),
-            }
+    try:
+        completion = groq_client.chat.completions.create(
+            model="llama-3.1-8b-instant",  # Aap apne pasand ka Groq model use kar sakti hain
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            temperature=0.3,
+            max_tokens=1000
         )
-
-    return manifest
-
+        return completion.choices[0].message.content
+    except Exception as e:
+        return f"⚠️ Error generating response from Groq: {e}"
 
 # ============================================================
-# Main Build Process
+# Streamlit UI
 # ============================================================
+st.title("🤖 PTCL Packages Assistant")
+st.write("Aap PTCL packages ke baray mein likh kar ya bol kar (Voice/Audio) pooch sakte hain!")
 
-def main() -> None:
-    ensure_directories()
+# Initialize chat history
+if "messages" not in st.session_state:
+    st.session_state.messages = []
 
-    files = sorted(
-        [
-            path
-            for path in KNOWLEDGE_BASE_DIR.rglob("*")
-            if path.is_file()
-            and path.suffix.lower() in SUPPORTED_EXTENSIONS
-        ]
-    )
+# Display chat history
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
 
-    if not files:
-        print("\n❌ No supported knowledge-base documents found.")
-        print(
-            "Please add PDF, TXT, or DOCX files to:"
+# Audio Input Section using Streamlit audio recorder or file uploader
+st.markdown("---")
+st.subheader("🎤 Voice Input")
+audio_file = st.file_uploader("Upload an audio file (.wav, .mp3, .m4a)", type=["wav", "mp3", "m4a"])
+
+user_query = None
+
+if audio_file is not None:
+    # Save temporary audio file
+    temp_audio_path = PROJECT_DIR / "temp_audio.wav"
+    with open(temp_audio_path, "wb") as f:
+        f.write(audio_file.getbuffer())
+    
+    with st.spinner("🔄 Transcribing audio (Multi-language support)..."):
+        # Transcribe with multi-language auto-detect and vocabulary prompt hint
+        segments, info = whisper_model.transcribe(
+            str(temp_audio_path),
+            beam_size=5,
+            language=None,  # Auto-detects English, Urdu, or Roman Urdu
+            initial_prompt="PTCL internet packages, Flash Fiber, landline, broadband, unlimited, student packages, PTCL ke packages batao"
         )
-        print(KNOWLEDGE_BASE_DIR)
-        return
+        transcript_text = " ".join([segment.text for segment in segments]).strip()
+        
+    if temp_audio_path.exists():
+        temp_audio_path.unlink()  # Clean up temp file
+        
+    if transcript_text:
+        st.info(f"**Voice transcript:** {transcript_text}")
+        user_query = transcript_text
 
-    print("=" * 70)
-    print("PTCL PACKAGES ASSISTANT — KNOWLEDGE BASE BUILD")
-    print("=" * 70)
-    print(f"Documents found: {len(files)}")
-    print(f"Embedding model: {EMBEDDING_MODEL_NAME}")
-    print()
+# Text input fallback/alternative
+text_query = st.chat_input("Ya yahan type karein (e.g., PTCL Flash Fiber packages batao)...")
 
-    all_chunks = []
-    all_metadata = []
+if text_query:
+    user_query = text_query
 
-    chunk_counter = 0
-
-    for document_path in files:
-        print(f"📄 Processing: {document_path.name}")
-
-        sections = extract_document(document_path)
-
-        if not sections:
-            print("   ⚠️ No readable text found.")
-            continue
-
-        document_chunk_count = 0
-
-        for section in sections:
-            section_chunks = chunk_words(section["text"])
-
-            for chunk_text in section_chunks:
-                chunk_id = f"chunk_{chunk_counter:06d}"
-
-                metadata = {
-                    "source_file": document_path.name,
-                    "page_number": section["page_number"],
-                    "document_title": section["document_title"],
-                    "chunk_id": chunk_id,
-                }
-
-                all_chunks.append(chunk_text)
-                all_metadata.append(metadata)
-
-                chunk_counter += 1
-                document_chunk_count += 1
-
-        print(f"   ✅ Chunks created: {document_chunk_count}")
-
-    if not all_chunks:
-        print("\n❌ No usable text chunks were created.")
-        return
-
-    print()
-    print(f"✅ Total chunks: {len(all_chunks)}")
-    print()
-    print("🔄 Loading embedding model...")
-
-    model = SentenceTransformer(EMBEDDING_MODEL_NAME)
-
-    print("🔄 Generating embeddings...")
-
-    embeddings = model.encode(
-        all_chunks,
-        batch_size=32,
-        show_progress_bar=True,
-        convert_to_numpy=True,
-        normalize_embeddings=True,
-    )
-
-    embeddings = np.asarray(
-        embeddings,
-        dtype=np.float32,
-    )
-
-    dimension = embeddings.shape[1]
-
-    index = faiss.IndexFlatIP(dimension)
-    index.add(embeddings)
-
-    faiss.write_index(
-        index,
-        str(FAISS_INDEX_PATH),
-    )
-
-    with CHUNKS_PATH.open("wb") as file:
-        pickle.dump(all_chunks, file)
-
-    with METADATA_PATH.open("wb") as file:
-        pickle.dump(all_metadata, file)
-
-    manifest = {
-        "generated_at_utc": datetime.now(
-            timezone.utc
-        ).isoformat(),
-        "document_count": len(files),
-        "chunk_count": len(all_chunks),
-        "embedding_model": EMBEDDING_MODEL_NAME,
-        "documents": build_manifest(files),
-    }
-
-    with MANIFEST_PATH.open(
-        "w",
-        encoding="utf-8",
-    ) as file:
-        json.dump(
-            manifest,
-            file,
-            indent=2,
-            ensure_ascii=False,
-        )
-
-    print()
-    print("=" * 70)
-    print("✅ KNOWLEDGE BASE BUILD COMPLETE")
-    print("=" * 70)
-    print(f"Chunks:   {CHUNKS_PATH}")
-    print(f"Metadata: {METADATA_PATH}")
-    print(f"Manifest: {MANIFEST_PATH}")
-    print(f"FAISS:    {FAISS_INDEX_PATH}")
-    print(f"Vectors:  {index.ntotal}")
-    print("=" * 70)
-
-
-if __name__ == "__main__":
-    main()
+# Process the query if available (from voice or text)
+if user_query:
+    # Append user message
+    st.session_state.messages.append({"role": "user", "content": user_query})
+    with st.chat_message("user"):
+        st.markdown(user_query)
+        
+    with st.chat_message("assistant"):
+        with st.spinner("🔍 Searching PTCL knowledge base..."):
+            retrieved_docs = search_knowledge_base(user_query, top_k=3)
+            response = generate_response(user_query, retrieved_docs)
+            st.markdown(response)
+            
+    st.session_state.messages.append({"role": "assistant", "content": response})
