@@ -1210,7 +1210,7 @@ st.markdown(
     <div class="hero">
         <div class="hero-title">PTCL Assistant</div>
         <div class="hero-sub">
-            Ask about internet, Flash Fiber, voice and mobile packages, TV and more —
+            Ask about internet, Flash Fiber, voice and mobile packages, TV and more,
             type or speak in the language you're comfortable with.
         </div>
         <div class="hero-badges">
@@ -1276,7 +1276,7 @@ with chat_col:
 voice_query = None
 with composer:
     st.markdown(
-        '<div class="composer-note">Type or speak in any language — replies come in the same language.</div>',
+        '<div class="composer-note">Type or speak in any language, replies come in the same language.</div>',
         unsafe_allow_html=True,
     )
     try:
@@ -1285,7 +1285,7 @@ with composer:
         type_col, mic_col = st.columns([3.6, 1.4])
 
     with type_col:
-        text_query = st.chat_input("Ask about PTCL packages — English, اردو or Roman Urdu")
+        text_query = st.chat_input("Ask about PTCL packages | English, اردو or Roman Urdu")
 
     with mic_col:
         recording = mic_recorder(
