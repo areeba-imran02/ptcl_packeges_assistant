@@ -1,0 +1,10 @@
+streamlit
+pymupdf
+python-docx
+sentence-transformers
+faiss-cpu
+groq
+streamlit-mic-recorder
+faster-whisper
+gTTS
+langdetect
