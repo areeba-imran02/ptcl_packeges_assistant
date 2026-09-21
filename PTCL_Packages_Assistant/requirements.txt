@@ -1,6 +1,0 @@
-streamlit
-pymupdf
-python-docx
-sentence-transformers
-faiss-cpu
-numpy
