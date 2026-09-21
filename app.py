@@ -84,6 +84,31 @@ st.markdown(
         }
 
         header[data-testid="stHeader"] { background: transparent; }
+
+        /* ---------- Glowing frame on all 4 sides ---------- */
+        .stApp::before {
+            content: "";
+            position: fixed; inset: 8px;
+            border-radius: 24px; padding: 2px;
+            background: linear-gradient(135deg, #2DD4BF, #3B82F6, #8B5CF6, #2DD4BF);
+            -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+            -webkit-mask-composite: xor;
+            mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+            pointer-events: none; z-index: 999999;
+        }
+        .stApp::after {
+            content: "";
+            position: fixed; inset: 8px;
+            border-radius: 24px;
+            box-shadow:
+                0 0 16px rgba(45, 212, 191, 0.50),
+                0 0 44px rgba(59, 130, 246, 0.32),
+                inset 0 0 32px rgba(45, 212, 191, 0.13);
+            pointer-events: none; z-index: 999998;
+            animation: frameGlow 4.5s ease-in-out infinite;
+        }
+        @keyframes frameGlow { 0%, 100% { opacity: 0.65; } 50% { opacity: 1; } }
+        @media (prefers-reduced-motion: reduce) { .stApp::after { animation: none; } }
         #MainMenu, footer { visibility: hidden; }
 
         .block-container {
@@ -182,15 +207,6 @@ st.markdown(
             background: rgba(4, 16, 31, 0.55); border: 1px solid var(--line); color: #CFE2FF;
         }
 
-        /* ---------- Welcome ---------- */
-        .welcome {
-            border-radius: 18px; padding: 1.3rem 1.5rem; margin-bottom: 1rem;
-            background: rgba(18, 55, 99, 0.35);
-            border: 1px solid var(--line);
-        }
-        .welcome-greet { font-size: 1.25rem; font-weight: 600; margin-bottom: 0.3rem; }
-        .welcome-text { color: #B9CCE6; font-size: 0.98rem; }
-
         /* ---------- Chat ---------- */
         div[data-testid="stChatMessage"] {
             border-radius: 18px;
@@ -204,10 +220,19 @@ st.markdown(
             background: linear-gradient(135deg, rgba(59, 130, 246, 0.30), rgba(18, 55, 99, 0.60));
             border-color: rgba(59, 130, 246, 0.45);
         }
-        div[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarAssistant"]),
-        div[data-testid="stChatMessage"]:has([data-testid="chatAvatarIcon-assistant"]) {
-            border-left: 4px solid var(--signal);
+        /* Assistant answers: light "paper" card so they stand apart from the dark UI */
+        div[data-testid="stChatMessage"]:has(:is([data-testid="stChatMessageAvatarAssistant"], [data-testid="chatAvatarIcon-assistant"])) {
+            background: linear-gradient(135deg, #F8FCFF 0%, #E4F2FF 100%);
+            border: 1px solid rgba(45, 212, 191, 0.7);
+            border-left: 6px solid #14B8A6;
+            box-shadow: 0 10px 30px rgba(45, 212, 191, 0.20);
         }
+        div[data-testid="stChatMessage"]:has(:is([data-testid="stChatMessageAvatarAssistant"], [data-testid="chatAvatarIcon-assistant"]))
+            :is([data-testid="stMarkdownContainer"], [data-testid="stMarkdownContainer"] *, [data-testid="stSpinner"] *, [data-testid="stCaptionContainer"] *) {
+            color: #0B1F3A !important;
+        }
+        div[data-testid="stChatMessage"]:has(:is([data-testid="stChatMessageAvatarAssistant"], [data-testid="chatAvatarIcon-assistant"]))
+            [data-testid="stMarkdownContainer"] strong { color: #0F5F5A !important; }
 
         /* ---------- Buttons ---------- */
         .stButton > button, div[data-testid="stButton"] > button {
@@ -228,19 +253,43 @@ st.markdown(
         .stButton > button:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
 
         /* ---------- Chat input ---------- */
-        [data-testid="stBottom"], [data-testid="stBottom"] > div {
-            background: transparent !important;
+        [data-testid="stBottom"] {
+            background: linear-gradient(to top, #04101F 62%, rgba(4, 16, 31, 0)) !important;
+            padding-top: 1.5rem;
         }
+        [data-testid="stBottom"] > div { background: transparent !important; }
+
         [data-testid="stChatInput"] {
             border-radius: 16px;
-            background: #0A2140;
-            border: 1px solid rgba(45, 212, 191, 0.45);
+            background: #0A2140 !important;
+            border: 1px solid rgba(45, 212, 191, 0.55) !important;
+            box-shadow: 0 0 18px rgba(45, 212, 191, 0.18);
         }
-        [data-testid="stChatInput"] textarea {
+        [data-testid="stChatInput"]:focus-within {
+            border-color: var(--signal) !important;
+            box-shadow: 0 0 0 1px var(--signal), 0 0 22px rgba(45, 212, 191, 0.35);
+        }
+        [data-testid="stChatInput"] * {
+            background-color: transparent !important;
+            border-color: transparent !important;
+            box-shadow: none !important;
             color: var(--foam) !important;
+            -webkit-text-fill-color: var(--foam);
             font-family: 'Outfit', 'Noto Naskh Arabic', sans-serif;
         }
-        [data-testid="stChatInput"] button { color: var(--signal); }
+        [data-testid="stChatInput"] textarea::placeholder {
+            color: var(--mist) !important;
+            -webkit-text-fill-color: var(--mist);
+            opacity: 1;
+        }
+        [data-testid="stChatInput"] [data-testid="stChatInputSubmitButton"] {
+            background-color: var(--signal) !important;
+            border-radius: 10px;
+        }
+        [data-testid="stChatInput"] [data-testid="stChatInputSubmitButton"] * {
+            color: #04101F !important;
+            -webkit-text-fill-color: #04101F;
+        }
 
         /* ---------- Voice ---------- */
         .voice-card {
@@ -1022,6 +1071,58 @@ def rebuild_knowledge_base():
 # SIDEBAR
 # =========================================================
 
+SUGGESTIONS = [
+    "What internet packages are available?",
+    "Tell me about Flash Fiber.",
+    "What are the PTCL voice and mobile packages?",
+    "انٹرنیٹ کے کون کون سے پیکیجز ہیں؟",
+    "Shoq TV ke baray mein bataen",
+    "Speed Bolt-On kya hai?",
+    "What is Quad Play?",
+    "Advance packages kon kon se hain?",
+    "What is the cheapest internet package?",
+    "Flash Fiber ki speed aur price kya hai?",
+    "Voice packages mein kitne minutes milte hain?",
+    "Which packages include free SMS?",
+    "How do I activate or deactivate a package?",
+    "Package ki validity kitni hoti hai?",
+    "فلیش فائبر کے بارے میں بتائیں",
+    "مجھے وائس پیکیجز کی تفصیل بتائیں",
+]
+
+# (start, end) gradient colours - all dark enough for white text.
+SUGGESTION_COLORS = [
+    ("#0F766E", "#115E59"),  # teal
+    ("#1D4ED8", "#1E3A8A"),  # blue
+    ("#7C3AED", "#5B21B6"),  # violet
+    ("#BE185D", "#9D174D"),  # pink
+    ("#C2410C", "#9A3412"),  # orange
+    ("#15803D", "#166534"),  # green
+    ("#0E7490", "#155E75"),  # cyan
+    ("#A21CAF", "#86198F"),  # fuchsia
+]
+
+
+def build_suggestion_css():
+    rules = []
+    for i in range(len(SUGGESTIONS)):
+        c1, c2 = SUGGESTION_COLORS[i % len(SUGGESTION_COLORS)]
+        rules.append(
+            f".st-key-sq_{i} button {{"
+            f" background: linear-gradient(135deg, {c1}, {c2}) !important;"
+            f" border: 1px solid rgba(255, 255, 255, 0.28) !important;"
+            f" color: #FFFFFF !important; height: auto; min-height: 2.6rem;"
+            f" white-space: normal; justify-content: flex-start; }}"
+            f" .st-key-sq_{i} button p {{ color: #FFFFFF !important; text-align: left;"
+            f" font-weight: 500; unicode-bidi: plaintext; }}"
+            f" .st-key-sq_{i} button:hover {{ filter: brightness(1.15);"
+            f" border-color: #FFFFFF !important; }}"
+        )
+    return "<style>" + "\n".join(rules) + "</style>"
+
+
+st.markdown(build_suggestion_css(), unsafe_allow_html=True)
+
 required_files = [CHUNKS_FILE, METADATA_FILE, MANIFEST_FILE, FAISS_FILE]
 kb_ready = all(file.exists() for file in required_files)
 kb_status = get_knowledge_base_status()["status"]
@@ -1039,6 +1140,12 @@ with st.sidebar:
         """,
         unsafe_allow_html=True,
     )
+
+    with st.expander("💡 Suggested questions", expanded=False):
+        for position, suggestion in enumerate(SUGGESTIONS):
+            if st.button(suggestion, use_container_width=True, key=f"sq_{position}"):
+                st.session_state.pending_query = suggestion
+                st.rerun()
 
     st.markdown('<div class="side-title">Topics you can ask about</div>', unsafe_allow_html=True)
     st.markdown(
@@ -1169,37 +1276,6 @@ elif pending_query and pending_query.strip():
     active_query = pending_query.strip()
 
 
-SUGGESTIONS = [
-    "What internet packages are available?",
-    "Tell me about Flash Fiber.",
-    "What are the PTCL voice and mobile packages?",
-    "انٹرنیٹ کے کون کون سے پیکیجز ہیں؟",
-    "Shoq TV ke baray mein bataen",
-    "Speed Bolt-On kya hai?",
-]
-
-
-def render_welcome():
-    st.markdown(
-        """
-        <div class="welcome">
-            <div class="welcome-greet">السلام علیکم · Hello · Assalam o Alaikum</div>
-            <div class="welcome-text">
-                Pick a question below, type your own, or tap the microphone.
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-    col_left, col_right = st.columns(2)
-    for position, suggestion in enumerate(SUGGESTIONS):
-        column = col_left if position % 2 == 0 else col_right
-        with column:
-            if st.button(suggestion, use_container_width=True, key=f"suggestion_{position}"):
-                st.session_state.pending_query = suggestion
-                st.rerun()
-
-
 def render_message(message):
     avatar = "📡" if message["role"] == "assistant" else "🙋"
     with st.chat_message(message["role"], avatar=avatar):
@@ -1215,9 +1291,6 @@ def render_message(message):
 # =========================================================
 
 with chat_area:
-    if not st.session_state.messages and not active_query:
-        render_welcome()
-
     for message in st.session_state.messages:
         render_message(message)
 
