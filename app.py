@@ -2,6 +2,7 @@ import os
 import json
 import pickle
 import hashlib
+import re
 from pathlib import Path
 
 import faiss
@@ -29,6 +30,137 @@ MANIFEST_FILE = DATA_DIR / "documents_manifest.json"
 FAISS_FILE = FAISS_DIR / "index.faiss"
 
 EMBEDDING_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
+
+
+# =========================================================
+# PAGE CONFIGURATION
+# =========================================================
+
+st.set_page_config(
+    page_title="PTCL Assistant",
+    page_icon="📡",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+
+# =========================================================
+# PROFESSIONAL UI STYLING & COLOR PALETTE
+# =========================================================
+
+st.markdown(
+    """
+    <style>
+        /* Color Palette variables & Global app styles */
+        .stApp {
+            background-color: #07152F;
+            color: #F8FAFF;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+        }
+
+        [data-testid="stSidebar"] {
+            background-color: #102A56;
+            border-right: 1px solid rgba(167, 139, 250, 0.15);
+        }
+
+        [data-testid="stSidebar"] * {
+            color: #F8FAFF !important;
+        }
+
+        .main-header {
+            padding: 1.5rem 0 0.5rem 0;
+            border-bottom: 1px solid rgba(167, 139, 250, 0.15);
+            margin-bottom: 1.5rem;
+        }
+
+        .main-title {
+            font-size: 2.2rem;
+            font-weight: 700;
+            color: #F8FAFF;
+            letter-spacing: -0.5px;
+            margin-bottom: 0.3rem;
+        }
+
+        .main-subtitle {
+            font-size: 1.05rem;
+            color: #A78BFA;
+            margin-bottom: 0.6rem;
+        }
+
+        .developer-text {
+            font-size: 0.8rem;
+            color: #8EF0B0;
+            font-weight: 500;
+        }
+
+        .welcome-card {
+            background: linear-gradient(135deg, #102A56 0%, #07152F 100%);
+            border: 1px solid rgba(107, 77, 255, 0.3);
+            border-radius: 16px;
+            padding: 2rem;
+            margin-bottom: 1.5rem;
+            box-shadow: 0 8px 32px rgba(7, 21, 47, 0.4);
+        }
+
+        .suggestion-btn {
+            background-color: #102A56;
+            border: 1px solid #6C4DFF;
+            color: #F8FAFF;
+            border-radius: 10px;
+            padding: 0.6rem 1rem;
+            font-size: 0.9rem;
+            transition: all 0.2s ease;
+            cursor: pointer;
+            text-align: left;
+            margin-bottom: 0.5rem;
+        }
+
+        .suggestion-btn:hover {
+            background-color: #6C4DFF;
+            color: #F8FAFF;
+            border-shadow: 0 0 12px rgba(108, 77, 255, 0.5);
+        }
+
+        div[data-testid="stChatMessage"] {
+            border-radius: 12px;
+            padding: 1rem;
+            margin-bottom: 0.8rem;
+            border: 1px solid rgba(167, 139, 250, 0.1);
+        }
+
+        div[data-testid="stChatMessage"][data-testid*="user"] {
+            background-color: #102A56;
+        }
+
+        div[data-testid="stChatMessage"][data-testid*="assistant"] {
+            background-color: rgba(16, 42, 86, 0.6);
+            border-left: 4px solid #6C4DFF;
+        }
+
+        div[data-testid="stButton"] > button {
+            border-radius: 8px;
+            font-weight: 600;
+            background-color: #6C4DFF;
+            color: #F8FAFF;
+            border: none;
+            transition: all 0.2s;
+        }
+
+        div[data-testid="stButton"] > button:hover {
+            background-color: #7c5cff;
+            box-shadow: 0 0 10px rgba(108, 77, 255, 0.4);
+        }
+
+        .stTextInput input {
+            background-color: #102A56 !important;
+            color: #F8FAFF !important;
+            border: 1px solid rgba(167, 139, 250, 0.3) !important;
+            border-radius: 8px !important;
+        }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
 
 # =========================================================
@@ -70,7 +202,6 @@ def transcribe_audio(audio_bytes):
             suffix=".webm",
             delete=False,
         ) as temp_audio:
-
             temp_audio.write(audio_bytes)
             temp_audio_path = temp_audio.name
 
@@ -86,7 +217,6 @@ def transcribe_audio(audio_bytes):
 
         for segment in segments:
             text = segment.text.strip()
-
             if text:
                 transcript_parts.append(text)
 
@@ -94,13 +224,71 @@ def transcribe_audio(audio_bytes):
 
     finally:
         if temp_audio_path:
-
             try:
-                Path(temp_audio_path).unlink(
-                    missing_ok=True
-                )
+                Path(temp_audio_path).unlink(missing_ok=True)
             except Exception:
                 pass
+
+
+# =========================================================
+# LANGUAGE DETECTION & UTILITIES
+# =========================================================
+
+def detect_query_language(text):
+    """
+    Robust query language detection supporting Urdu script,
+    Roman Urdu, and English while ignoring standard PTCL terms.
+    """
+    if not text:
+        return "en"
+
+    # Check for Urdu script characters
+    urdu_chars = sum(1 for char in text if "\u0600" <= char <= "\u06FF")
+    if urdu_chars >= 2:
+        return "ur"
+
+    # Check for Roman Urdu patterns / keywords
+    roman_urdu_keywords = [
+        "kon", "kya", "hain", "hai", "kese", "batao", "mujhe", 
+        "packages", "wala", "aur", "ki", "ka", "ke", "mein", 
+        "se", "karnay", "konsa", "konsay", "bataen", "hain"
+    ]
+    lower_text = text.lower()
+    words = lower_text.split()
+    match_count = sum(1 for w in words if w in roman_urdu_keywords)
+    
+    if match_count >= 1 or any(k in lower_text for k in ["kon kon", "kya hai", "bataen", "packages kon"]):
+        return "roman_ur"
+
+    return "en"
+
+
+def clean_text_for_tts(text):
+    """
+    Clean markdown symbols, bullets, emojis, URLs, and formatting
+    from the response before sending it to TTS.
+    """
+    if not text:
+        return ""
+    # Remove markdown headers, bold, italics, lists
+    cleaned = re.sub(r'[\#\*\_\-\`\~\[\]\(\)]', ' ', text)
+    # Remove URLs
+    cleaned = re.sub(r'http\S+', '', cleaned)
+    # Condense multiple whitespaces
+    cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+    return cleaned
+
+
+def format_source_name(filename):
+    """Convert technical filename into a clean user-friendly document name."""
+    if not filename:
+        return "PTCL Knowledge Base"
+    name = Path(filename).stem
+    cleaned = re.sub(r'^[0-9]+[_]*', '', name)
+    cleaned = cleaned.replace('_', ' ').title()
+    if not cleaned.lower().startswith("ptcl"):
+        return f"PTCL {cleaned}"
+    return cleaned
 
 
 # =========================================================
@@ -108,7 +296,7 @@ def transcribe_audio(audio_bytes):
 # =========================================================
 
 TOP_K = 5
-SIMILARITY_THRESHOLD = 0.35
+SIMILARITY_THRESHOLD = 0.30
 
 
 # =========================================================
@@ -125,9 +313,7 @@ def retrieve_relevant_chunks(
     Convert only the user's query into an embedding and retrieve
     the most relevant pre-embedded knowledge-base chunks from FAISS.
     """
-
     query = query.strip()
-
     if not query:
         return []
 
@@ -154,10 +340,7 @@ def retrieve_relevant_chunks(
 
     results = []
 
-    for score, index_position in zip(
-        scores[0],
-        indices[0],
-    ):
+    for score, index_position in zip(scores[0], indices[0]):
         if index_position < 0:
             continue
 
@@ -185,25 +368,15 @@ def format_retrieved_context(results):
     Convert retrieved chunks into a compact context block
     for the Groq model.
     """
-
     if not results:
         return ""
 
     context_parts = []
 
     for number, result in enumerate(results, start=1):
-
         metadata = result["metadata"]
-
-        source_file = metadata.get(
-            "source_file",
-            "Unknown source",
-        )
-
-        page_number = metadata.get(
-            "page_number",
-            "N/A",
-        )
+        source_file = metadata.get("source_file", "Unknown source")
+        page_number = metadata.get("page_number", "N/A")
 
         context_parts.append(
             f"""
@@ -221,70 +394,6 @@ Content:
 
 
 # =========================================================
-# PAGE CONFIGURATION
-# =========================================================
-
-st.set_page_config(
-    page_title="PTCL Packages Assistant",
-    page_icon="📡",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
-
-
-# =========================================================
-# PROFESSIONAL UI STYLING
-# =========================================================
-
-st.markdown(
-    """
-    <style>
-        .stApp {
-            background: #f7f8fc;
-        }
-
-        [data-testid="stSidebar"] {
-            background: #111827;
-        }
-
-        [data-testid="stSidebar"] * {
-            color: #f9fafb;
-        }
-
-        .main-header {
-            padding: 1.2rem 0 0.4rem 0;
-        }
-
-        .main-title {
-            font-size: 2rem;
-            font-weight: 700;
-            color: #172033;
-            margin-bottom: 0.2rem;
-        }
-
-        .main-subtitle {
-            font-size: 1rem;
-            color: #667085;
-            margin-bottom: 1.4rem;
-        }
-
-        .developer-text {
-            font-size: 0.78rem;
-            color: #98a2b3;
-            margin-top: 0.2rem;
-        }
-
-        div[data-testid="stButton"] > button {
-            border-radius: 8px;
-            font-weight: 600;
-        }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
-
-
-# =========================================================
 # KNOWLEDGE-BASE LOADING
 # =========================================================
 
@@ -296,18 +405,14 @@ def load_embedding_model():
 @st.cache_resource(show_spinner=False)
 def load_faiss_index():
     if not FAISS_FILE.exists():
-        raise FileNotFoundError(
-            "FAISS index was not found. Please build the knowledge base first."
-        )
+        raise FileNotFoundError("FAISS index was not found. Please build the knowledge base first.")
     return faiss.read_index(str(FAISS_FILE))
 
 
 @st.cache_data(show_spinner=False)
 def load_chunks():
     if not CHUNKS_FILE.exists():
-        raise FileNotFoundError(
-            "chunks.pkl was not found. Please build the knowledge base first."
-        )
+        raise FileNotFoundError("chunks.pkl was not found. Please build the knowledge base first.")
     with open(CHUNKS_FILE, "rb") as file:
         return pickle.load(file)
 
@@ -315,9 +420,7 @@ def load_chunks():
 @st.cache_data(show_spinner=False)
 def load_metadata():
     if not METADATA_FILE.exists():
-        raise FileNotFoundError(
-            "metadata.pkl was not found. Please build the knowledge base first."
-        )
+        raise FileNotFoundError("metadata.pkl was not found. Please build the knowledge base first.")
     with open(METADATA_FILE, "rb") as file:
         return pickle.load(file)
 
@@ -325,9 +428,7 @@ def load_metadata():
 @st.cache_data(show_spinner=False)
 def load_manifest():
     if not MANIFEST_FILE.exists():
-        raise FileNotFoundError(
-            "documents_manifest.json was not found. Please build the knowledge base first."
-        )
+        raise FileNotFoundError("documents_manifest.json was not found. Please build the knowledge base first.")
     with open(MANIFEST_FILE, "r", encoding="utf-8") as file:
         return json.load(file)
 
@@ -382,42 +483,21 @@ def get_groq_client():
 # =========================================================
 
 SYSTEM_PROMPT = """
-You are PTCL Packages Assistant.
-
-Answer questions ONLY from the supplied PTCL knowledge-base
-context.
+You are PTCL Packages Assistant, an expert guide for PTCL packages and services.
+Answer questions strictly and accurately from the supplied PTCL knowledge-base context.
 
 STRICT RULES:
-1. Never invent PTCL package names.
-2. Never invent prices.
-3. Never invent validity.
-4. Never invent internet data.
-5. Never invent minutes.
-6. Never invent SMS allowances.
-7. Never invent activation codes.
-8. Never invent deactivation codes.
-9. Never use outside knowledge when the required information is not present in the supplied context.
-10. Never present guesses as facts.
-11. If the requested information is unavailable, clearly say:
-    "This information is not available in the current PTCL knowledge base."
-12. Answer in the user's language where reasonably possible: English, Urdu, or Roman Urdu.
-13. Keep answers concise, useful, and professional.
-14. For unrelated questions, explain that this assistant is designed for the provided PTCL knowledge base.
-15. Mention source document/page when useful and when that information exists in the supplied context.
-
-PACKAGE FORMAT:
-When applicable, use:
-Package Name:
-Price:
-Validity:
-Internet:
-Minutes:
-SMS:
-Activation:
-Deactivation:
-
-If a field is missing, write:
-Not specified in the knowledge base.
+1. Never invent PTCL package names, prices, speeds, validity, internet data, minutes, SMS allowances, activation codes, or deactivation codes.
+2. Never use outside knowledge when required information is not present in the supplied context.
+3. If the information genuinely cannot be found in the context, respond politely in the SAME language as the user's query:
+   - For English queries: "I couldn't find that specific information in my current PTCL knowledge base. Please try asking about PTCL internet packages, Flash Fiber, voice/mobile packages, Shoq TV, Speed Bolt-On, Quad Play, or advance packages."
+   - For Urdu queries: "مجھے موجودہ PTCL معلومات میں اس سوال کی مخصوص تفصیل نہیں ملی۔ آپ PTCL انٹرنیٹ پیکیجز، Flash Fiber، Voice/Mobile Packages، Shoq TV، Speed Bolt-On، Quad Play یا Advance Packages کے بارے میں پوچھ سکتے ہیں۔"
+   - For Roman Urdu queries: "Mujhe mojooda PTCL knowledge base mein is sawal ki tafseel nahi mili. Aap PTCL internet packages, Flash Fiber, voice/mobile packages, Shoq TV, Speed Bolt-On, Quad Play ya advance packages ke baray mein pooch sakte hain."
+4. Match the user's query language strictly:
+   - If user asks in English, answer in clear, professional English.
+   - If user asks in Urdu script, answer in natural Urdu script.
+   - If user asks in Roman Urdu, answer naturally in Roman Urdu.
+5. Keep answers concise, useful, and professional. Use bullet points or structured lists when appropriate. Do not dump entire text verbatim.
 
 CONTEXT:
 {context}
@@ -426,17 +506,26 @@ CONTEXT:
 
 def generate_grounded_answer(query: str, retrieved_results: list):
     query = query.strip()
+    query_lang = detect_query_language(query)
 
     if not query:
+        if query_lang == "ur":
+            return "براہ کرم PTCL پیکیجز یا خدمات کے بارے میں کوئی سوال درج کریں۔"
+        elif query_lang == "roman_ur":
+            return "Barah-e-karam PTCL packages ya services ke baray mein koi sawal darj karen."
         return "Please enter a question about PTCL packages or services."
 
     if not retrieved_results:
-        return "This information is not available in the current PTCL knowledge base."
+        if query_lang == "ur":
+            return "مجھے موجودہ PTCL معلومات میں اس سوال کی مخصوص تفصیل نہیں ملی۔ آپ PTCL انٹرنیٹ پیکیجز، Flash Fiber، Voice/Mobile Packages، Shoq TV، Speed Bolt-On، Quad Play یا Advance Packages کے بارے میں پوچھ سکتے ہیں۔"
+        elif query_lang == "roman_ur":
+            return "Mujhe mojooda PTCL knowledge base mein is sawal ki tafseel nahi mili. Aap PTCL internet packages, Flash Fiber, voice/mobile packages, Shoq TV, Speed Bolt-On, Quad Play ya advance packages ke baray mein pooch sakte hain."
+        return "I couldn't find that specific information in my current PTCL knowledge base. Please try asking about PTCL internet packages, Flash Fiber, voice/mobile packages, Shoq TV, Speed Bolt-On, Quad Play, or advance packages."
 
     client = get_groq_client()
 
     if client is None:
-        return "Groq API key is not configured. Please add GROQ_API_KEY to the environment before using the assistant."
+        return "Sorry, I couldn't process that request right now. Please check API key configuration or try again shortly."
 
     context = format_retrieved_context(retrieved_results)
     prompt = SYSTEM_PROMPT.format(context=context)
@@ -455,12 +544,16 @@ def generate_grounded_answer(query: str, retrieved_results: list):
         answer = response.choices[0].message.content
 
         if not answer or not answer.strip():
-            return "I could not generate an answer from the available PTCL knowledge base."
+            if query_lang == "ur":
+                return "معذرت، میں دستیاب PTCL ڈیٹا بیس سے جواب تخلیق کرنے سے قاصر رہا۔"
+            elif query_lang == "roman_ur":
+                return "Maazrat, mein dastiyab PTCL database se jawab takhleeq karne se qasir raha."
+            return "I couldn't generate an answer from the available PTCL knowledge base."
 
         return answer.strip()
 
     except Exception:
-        return "I’m unable to process the request right now. Please try again shortly."
+        return "Sorry, I couldn't process that request right now. Please try again."
 
 
 # =========================================================
@@ -481,9 +574,9 @@ if "last_query" not in st.session_state:
 st.markdown(
     """
     <div class="main-header">
-        <div class="main-title">PTCL Packages Assistant</div>
+        <div class="main-title">PTCL Assistant</div>
         <div class="main-subtitle">
-            Your intelligent guide to PTCL packages and services.
+            Your smart assistant for PTCL packages, internet, voice, mobile and services.
         </div>
         <div class="developer-text">
             Developed by Areeba Imran
@@ -495,7 +588,7 @@ st.markdown(
 
 
 # =========================================================
-# SIDEBAR MANIFEST UTILITIES
+# MANIFEST & REBUILD HELPERS
 # =========================================================
 
 def _calculate_document_sha256(file_path):
@@ -629,7 +722,13 @@ def rebuild_knowledge_base():
 # =========================================================
 
 with st.sidebar:
-    st.markdown("## PTCL Assistant")
+    st.markdown("### PTCL Assistant")
+    st.markdown("Ask about PTCL packages and services.")
+    st.markdown("---")
+    
+    st.markdown("### 📚 Quick Categories")
+    st.markdown("• Internet Packages\n• Flash Fiber\n• Voice & Mobile\n• Shoq TV\n• Speed Bolt-On\n• Quad Play\n• Advance Packages")
+    
     st.markdown("---")
     st.markdown("### Knowledge Base")
 
@@ -644,11 +743,11 @@ with st.sidebar:
         st.success("Knowledge base ready")
         st.caption(f"{current_doc_count} source documents verified.")
     elif kb_ready and kb_status == "changed":
-        st.warning("Knowledge base documents have changed. Rebuild required.")
+        st.warning("Knowledge base documents changed. Rebuild required.")
     elif kb_status == "missing_saved_manifest":
         st.warning("Knowledge-base manifest missing. Rebuild required.")
     elif kb_status == "error":
-        st.warning("Knowledge-base status could not be verified.")
+        st.warning("Knowledge-base status unverified.")
     else:
         st.error("Knowledge base incomplete")
 
@@ -676,11 +775,11 @@ with st.sidebar:
 # MAIN LAYOUT & AUDIO HELPERS
 # =========================================================
 
-main_column, info_column = st.columns([2.2, 1], gap="large")
+main_column, info_column = st.columns([2.4, 1], gap="large")
 
 
 def render_voice_input():
-    st.markdown('<div class="section-label">VOICE INPUT</div>', unsafe_allow_html=True)
+    st.markdown("**Voice Input**", unsafe_allow_html=True)
     recording = mic_recorder(
         start_prompt="Start recording",
         stop_prompt="Stop recording",
@@ -704,9 +803,12 @@ def generate_tts_audio(text):
     if not text or not text.strip():
         return None
     try:
+        clean_speech = clean_text_for_tts(text)
+        if not clean_speech:
+            return None
         language = detect_tts_language(text)
         audio_buffer = BytesIO()
-        tts = gTTS(text=text.strip(), lang=language, slow=False)
+        tts = gTTS(text=clean_speech, lang=language, slow=False)
         tts.write_to_fp(audio_buffer)
         audio_buffer.seek(0)
         return audio_buffer.read()
@@ -715,16 +817,47 @@ def generate_tts_audio(text):
 
 
 # =========================================================
-# ASSISTANT CHAT CONTAINER
+# ASSISTANT CHAT CONTAINER & WELCOME SCREEN
 # =========================================================
 
 with main_column:
-    st.markdown("### Ask about PTCL packages")
-    st.caption("Type your question or use the microphone below.")
+    # --------------------------------------------------------
+    # Welcome Screen if no chat history
+    # --------------------------------------------------------
+    if not st.session_state.messages:
+        st.markdown(
+            """
+            <div class="welcome-card">
+                <h3>Welcome to PTCL Assistant</h3>
+                <p style="color: #A78BFA; margin-bottom: 1rem;">
+                    Ask me about PTCL internet packages, Flash Fiber, voice & mobile packages, Shoq TV, Speed Bolt-On, Quad Play and more.
+                </p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
-    if not kb_ready:
-        st.warning("The knowledge base is not ready. Please build it before using the assistant.")
+        st.markdown("#### Suggested Questions:")
+        col_s1, col_s2 = st.columns(2)
+        
+        suggested_clicked = None
+        with col_s1:
+            if st.button("What internet packages are available?", use_container_width=True):
+                suggested_clicked = "What internet packages are available?"
+            if st.button("Tell me about Flash Fiber.", use_container_width=True):
+                suggested_clicked = "Tell me about Flash Fiber."
+        with col_s2:
+            if st.button("What are the PTCL voice and mobile packages?", use_container_width=True):
+                suggested_clicked = "What are the PTCL voice and mobile packages?"
+            if st.button("انٹرنیٹ کے کون کون سے پیکیجز ہیں؟", use_container_width=True):
+                suggested_clicked = "انٹرنیٹ کے کون کون سے پیکیجز ہیں؟"
 
+        if suggested_clicked:
+            st.session_state.last_query = suggested_clicked
+
+    # --------------------------------------------------------
+    # Display existing conversation
+    # --------------------------------------------------------
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
@@ -733,12 +866,15 @@ with main_column:
             if message["role"] == "assistant" and message.get("sources"):
                 with st.expander("Sources", expanded=False):
                     for source in message["sources"]:
-                        st.markdown(f"**Document:** {source.get('source_file', 'Unknown')}")
+                        st.markdown(f"**Document:** {source.get('source_file', 'PTCL Knowledge Base')}")
                         st.markdown(f"**Page:** {source.get('page_number', 'N/A')}")
                         st.markdown(f"**Similarity:** {source.get('similarity', 0.0):.4f}")
                         st.divider()
 
-    query = st.chat_input("Ask about PTCL packages, internet, minutes, SMS, validity...")
+    # --------------------------------------------------------
+    # Input Area
+    # --------------------------------------------------------
+    query = st.chat_input("Ask about PTCL packages, internet, voice, minutes, SMS, validity...")
     voice_audio = render_voice_input()
     voice_query = None
 
@@ -752,7 +888,12 @@ with main_column:
         if voice_query:
             st.info(f"Voice transcript: {voice_query}")
 
-    active_query = voice_query if voice_query else query
+    # Determine active query from suggestion, voice input, or chat input
+    active_query = st.session_state.pop("last_query", None)
+    if voice_query:
+        active_query = voice_query
+    elif query:
+        active_query = query
 
     if active_query and active_query.strip():
         active_query = active_query.strip()
@@ -763,10 +904,10 @@ with main_column:
 
         with st.chat_message("assistant"):
             if not kb_ready:
-                st.error("The PTCL knowledge base is not ready.")
+                st.error("The PTCL knowledge base is not ready. Please build the knowledge base first.")
             else:
                 try:
-                    with st.spinner("Searching knowledge base..."):
+                    with st.spinner("Searching PTCL knowledge base..."):
                         knowledge_base = initialize_knowledge_base()
                         retrieved_results = retrieve_relevant_chunks(
                             query=active_query,
@@ -779,7 +920,7 @@ with main_column:
                         audio_bytes = generate_tts_audio(answer)
                         sources_list = [
                             {
-                                "source_file": res["metadata"].get("source_file", "Unknown"),
+                                "source_file": format_source_name(res["metadata"].get("source_file", "PTCL Knowledge Base")),
                                 "page_number": res["metadata"].get("page_number", "N/A"),
                                 "similarity": res["similarity"],
                             }
@@ -807,5 +948,14 @@ with main_column:
                             "sources": sources_list,
                         }
                     )
-                except Exception as e:
-                    st.error(f"An error occurred while processing your request: {e}")
+                except Exception:
+                    err_msg = "Sorry, I couldn't process that request right now. Please try again."
+                    st.error(err_msg)
+                    st.session_state.messages.append(
+                        {
+                            "role": "assistant",
+                            "content": err_msg,
+                            "audio": None,
+                            "sources": [],
+                        }
+                    )
