@@ -792,9 +792,9 @@ RULES:
 2. Never use outside knowledge when the required information is not in the provided information.
 3. If the information is missing, politely say you could not find that specific detail, and suggest asking about PTCL internet packages, Flash Fiber, voice/mobile packages, Shoq TV, Speed Bolt-On, Quad Play or advance packages. Say this in the user's language.
 4. LANGUAGE: reply ONLY in this language: {language}.
-   - Urdu: use natural Urdu script (never Hindi/Devanagari).
-   - Roman Urdu: use Latin letters only, natural everyday Urdu.
-   - Keep PTCL product names, prices (Rs.), speeds (Mbps) and codes exactly as given.
+   - Urdu: write in natural, everyday SPOKEN Pakistani Urdu, the way a Pakistani PTCL customer-care agent actually talks (khaalis, rawaan, bol-chaal wali Urdu) — NOT stiff, literary, heavily Persian/Arabic-loaded, or word-for-word translated Urdu, and NOT Indian-style Urdu/Hindi phrasing. Use Urdu script only (never Hindi/Devanagari).
+   - Roman Urdu: use Latin letters only, the same casual everyday Urdu people type in messages (e.g. "milta hai", "hai", "chahiye", "ke sath") — not a stiff literal translation.
+   - Keep PTCL product names, prices (Rs.), speeds (Mbps) and codes exactly as given, in digits.
 5. NEVER mention documents, files, file names, sources, page numbers, links to documents, "context" or "knowledge base". Just answer naturally as PTCL Assistant.
 6. Be concise and helpful. Use short bullet points for lists of packages, and put key numbers (price, speed, validity) up front. Do not dump raw text.
 7. Use the earlier conversation only to understand follow-up questions.
@@ -874,8 +874,9 @@ def generate_grounded_answer(query, language, retrieved_results, history):
 
 def to_urdu_speech_text(text):
     """
-    gTTS's Urdu voice cannot read Latin letters properly, so Roman Urdu (and
-    English brand words inside Urdu) are rewritten in Urdu script for speaking.
+    gTTS's Urdu voice cannot read Latin letters (or digit strings) reliably,
+    so Roman Urdu, English brand words and numbers are rewritten fully in
+    Urdu script for speaking.
     """
     if get_groq_client() is None:
         return ""
@@ -883,7 +884,13 @@ def to_urdu_speech_text(text):
         system = (
             "Rewrite the user's text in natural Urdu script so a text-to-speech engine can read it aloud. "
             "If it is Roman Urdu, transliterate it to Urdu script. Write English words, brand names and units "
-            "phonetically in Urdu script (e.g. PTCL -> پی ٹی سی ایل, Mbps -> ایم بی پی ایس). Keep numbers as digits. "
+            "phonetically in Urdu script (e.g. PTCL -> پی ٹی سی ایل, Mbps -> ایم بی پی ایس). "
+            "IMPORTANT - numbers: spell EVERY number out fully in Urdu words, keeping the EXACT value given — "
+            "never round, scale, or reinterpret it. Use normal Pakistani spoken Urdu number words: سو for "
+            "hundred, ہزار for thousand, لاکھ ONLY for values of 100,000 or more. For example: 300 -> تین سو "
+            "(never تین لاکھ), 500 -> پانچ سو, 1500 -> پندرہ سو, 2000 -> دو ہزار, 2999 -> دو ہزار نو سو ننانوے. "
+            "Before finalising, re-check each number word against the original digits so the spoken value "
+            "exactly matches. "
             "Output only the rewritten text."
         )
         return call_llm(
@@ -901,7 +908,7 @@ def prepare_speech_text(answer, language):
         return ""
     if language == "roman_urdu":
         return to_urdu_speech_text(text)
-    if language == "urdu" and re.search(r"[A-Za-z]", text):
+    if language == "urdu" and re.search(r"[A-Za-z0-9]", text):
         return to_urdu_speech_text(text) or text
     return text
 
