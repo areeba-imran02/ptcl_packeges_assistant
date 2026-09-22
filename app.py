@@ -794,6 +794,7 @@ RULES:
 4. LANGUAGE: reply ONLY in this language: {language}.
    - Urdu: write in natural, everyday SPOKEN Pakistani Urdu, the way a Pakistani PTCL customer-care agent actually talks (khaalis, rawaan, bol-chaal wali Urdu) — NOT stiff, literary, heavily Persian/Arabic-loaded, or word-for-word translated Urdu, and NOT Indian-style Urdu/Hindi phrasing. Use Urdu script only (never Hindi/Devanagari).
    - Roman Urdu: use Latin letters only, the same casual everyday Urdu people type in messages (e.g. "milta hai", "hai", "chahiye", "ke sath") — not a stiff literal translation.
+   - Do NOT sprinkle in extra filler/politeness interjections that were not needed (e.g. "جی", "جی ہاں", "اچھا", "دیکھیں") in the middle of sentences just to sound conversational. Natural tone comes from simple everyday wording, not from adding filler words. Every word you write must carry real information.
    - Keep PTCL product names, prices (Rs.), speeds (Mbps) and codes exactly as given, in digits.
 5. NEVER mention documents, files, file names, sources, page numbers, links to documents, "context" or "knowledge base". Just answer naturally as PTCL Assistant.
 6. Be concise and helpful. Use short bullet points for lists of packages, and put key numbers (price, speed, validity) up front. Do not dump raw text.
@@ -891,7 +892,10 @@ def to_urdu_speech_text(text):
             "(never تین لاکھ), 500 -> پانچ سو, 1500 -> پندرہ سو, 2000 -> دو ہزار, 2999 -> دو ہزار نو سو ننانوے. "
             "Before finalising, re-check each number word against the original digits so the spoken value "
             "exactly matches. "
-            "Output only the rewritten text."
+            "Do NOT add any extra words that are not in the original text — no filler/politeness interjections "
+            "like جی, جی ہاں, اچھا, ہاں, دیکھیں, and no commentary or explanation. Only transliterate/rewrite what "
+            "is already there, word for word, in the same order. "
+            "Output only the rewritten text, nothing else."
         )
         return call_llm(
             [{"role": "system", "content": system}, {"role": "user", "content": text}],
